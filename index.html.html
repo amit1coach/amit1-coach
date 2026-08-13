@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Amit 1 — Running Coach</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans','Segoe UI',sans-serif;background:#F4F6F9;color:#0F1117;min-height:100vh}
+input,select,textarea,button{font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:2px solid #F5A623;outline-offset:1px}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#CBD5E0;border-radius:3px}
+.mo{position:fixed;inset:0;background:rgba(15,17,23,.55);display:flex;align-items:center;justify-content:center;z-index:200;padding:1rem}
+.mb{background:#fff;border-radius:14px;padding:1.5rem;width:100%;max-height:90vh;overflow-y:auto;border:.5px solid #E2E8F0;box-shadow:0 20px 60px rgba(0,0,0,.15)}
+.card{background:#fff;border:.5px solid #E2E8F0;border-radius:12px;padding:12px 16px;cursor:pointer;transition:border-color .15s}
+.card:hover{border-color:#CBD5E0}
+.btn{border:.5px solid #CBD5E0;background:#fff;color:#0F1117;border-radius:6px;padding:8px 16px;font-size:14px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:background .12s}
+.btn:hover{background:#F7F8FA}
+.btnp{border:none;background:#F5A623;color:#fff;border-radius:6px;padding:8px 16px;font-size:14px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.btnp:hover{background:#E09510}
+.btns{padding:5px 12px;font-size:12px}
+.btnd{border:.5px solid #E05C5C;background:#FFF0F0;color:#E05C5C;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:500;cursor:pointer}
+input[type=text],input[type=number],input[type=email],input[type=password],select,textarea{border:.5px solid #CBD5E0;border-radius:6px;padding:7px 10px;font-size:14px;background:#fff;color:#0F1117;width:100%}
+textarea{resize:vertical}
+input::placeholder{color:#CBD5E0;font-style:italic}
+input.vague::placeholder{color:#E2E8F0;font-style:italic;font-weight:300}
+.lbl{font-size:12px;font-weight:500;color:#4A5568;display:block;margin-bottom:4px}
+.sc{background:#F7F8FA;border-radius:10px;padding:14px 16px;flex:1}
+.sl{font-size:12px;color:#8A9BB0;margin-bottom:6px;font-weight:500}
+.sv{font-size:22px;font-weight:700;font-family:'DM Mono',monospace;line-height:1}
+.stit{font-size:10px;font-weight:700;color:#8A9BB0;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}
+.tabb{border:none;border-bottom:2px solid transparent;background:transparent;padding:8px 18px;font-size:14px;cursor:pointer;color:#8A9BB0;font-weight:400;margin-bottom:-1px}
+.tabb.act{border-bottom-color:#F5A623;color:#0F1117;font-weight:600}
+.wnb{border:.5px solid #E2E8F0;border-radius:5px;padding:5px 9px;cursor:pointer;background:#fff;font-size:13px}
+.toast{position:fixed;top:16px;right:16px;z-index:999;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,.1)}
+.dr{border:.5px solid #E2E8F0;border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.wtb{font-size:12px;font-weight:700;padding:2px 9px;border-radius:4px;display:inline-block}
+.stb{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;display:inline-block}
+.mono{font-family:'DM Mono',monospace}
+.sblk{background:#F7F8FA;border:.5px solid #E2E8F0;border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.spin{display:inline-block;width:20px;height:20px;border:2px solid #F5A623;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.login-box{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:400px;border:.5px solid #E2E8F0;box-shadow:0 8px 32px rgba(0,0,0,.1)}
+@media(max-width:600px){.gr2{grid-template-columns:1fr!important}.strow{flex-wrap:wrap}.strow .sc{min-width:45%}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDJ4eH7n4xZH6UkGmvVNDu8W9npnoklsEs",
+  authDomain: "amit1-9b45d.firebaseapp.com",
+  projectId: "amit1-9b45d",
+  storageBucket: "amit1-9b45d.firebasestorage.app",
+  messagingSenderId: "654375010027",
+  appId: "1:654375010027:web:b34774524c4cd67ff748ae"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+window._firebase = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, onSnapshot };
+window.dispatchEvent(new Event("firebase-ready"));
+</script>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+// Wait for React to be available
+const {useState,useEffect,useCallback,useRef,createElement:h,Fragment} = React;
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const WT = {
+  easy:    {label:"Easy run",  color:"#2ECC71",bg:"#E8F8F0",dark:"#1A7A43"},
+  tempo:   {label:"Tempo",     color:"#BF00FF",bg:"#F5E6FF",dark:"#7700AA"},
+  interval:{label:"Intervals", color:"#FF0090",bg:"#FFE6F4",dark:"#AA0060"},
+  long:    {label:"Long run",  color:"#A78BFA",bg:"#F0EBFF",dark:"#6040C0"},
+  race:    {label:"Race",      color:"#E05C5C",bg:"#FCEAEA",dark:"#902020"},
+  strength:{label:"Strength",  color:"#F97316",bg:"#FEF0E6",dark:"#A04010"},
+  recovery:{label:"Recovery",  color:"#06B6D4",bg:"#E0F7FA",dark:"#0E7490"},
+  hills:   {label:"Hill reps", color:"#A0784A",bg:"#F5EDE0",dark:"#6B4E28"},
+  fartlek: {label:"Fartlek",   color:"#7C3AED",bg:"#EDE9FE",dark:"#4C1D95"},
+  rest:    {label:"Rest / Off",color:"#8A9BB0",bg:"#F0F3F7",dark:"#4A5568"},
+};
+const LVL = {
+  serious:     {label:"Serious",     bg:"#F0EBFF",color:"#6040C0",border:"#A78BFA"},
+  recreational:{label:"Recreational",bg:"#E6F3FF",color:"#1A5FA0",border:"#3B9EFF"},
+};
+const SS = {
+  done:    {bg:"#E8F8F0",color:"#1A7A43",border:"#2ECC71",label:"✓ Done"},
+  modified:{bg:"#FEF3E0",color:"#9A6610",border:"#F5A623",label:"~ Modified"},
+  skipped: {bg:"#FCEAEA",color:"#902020",border:"#E05C5C",label:"✕ Skipped"},
+};
+const COACH_EMAIL = "amit@coach.amit1";
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+const DAYS_IDX = Object.fromEntries(DAYS.map((d,i)=>[d,i]));
+const getWeekStart = (off=0) => {
+  const d=new Date();
+  const day=d.getDay(); // 0=Sun
+  d.setDate(d.getDate()-day+off*7);
+  d.setHours(0,0,0,0);
+  return d;
+};
+const weekKey = (off=0) => {
+  const d = new Date();
+  // Subtract current day-of-week to get to Sunday, apply week offset
+  d.setDate(d.getDate() - d.getDay() + (off * 7));
+  // Use local date components to avoid UTC timezone shift
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+const weekLabel = (off=0) => {const s=getWeekStart(off),e=new Date(s);e.setDate(s.getDate()+6);return `${s.getDate()}/${s.getMonth()+1} – ${e.getDate()}/${e.getMonth()+1}`;};
+const todayShort = () => DAYS[new Date().getDay()];
+const initials = n => n.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+const ccColor  = p => p===null?{bg:"#F0F3F7",color:"#8A9BB0"}:p>=80?{bg:"#E8F8F0",color:"#1A7A43"}:p>=50?{bg:"#FEF3E0",color:"#9A6610"}:{bg:"#FCEAEA",color:"#902020"};
+const newPart  = (type="easy") => ({type,distance:"",pace:"",notes:"",_showPace:false});
+const newSess  = () => ({parts:[newPart()]});
+const newDay   = (rest=false,sessions=null) => ({restDay:rest,sessions:sessions||[newSess()]});
+const sessTotalKm = s => (s.parts||[]).reduce((t,p)=>t+(parseFloat(p.distance)||0),0);
+const dayTotalKm  = d => (d?.sessions||[]).reduce((t,s)=>t+sessTotalKm(s),0);
+const dayIsRest   = d => !d||d.restDay||(d.sessions||[]).length===0;
+const sessFirstType = s => s.parts&&s.parts.length>0?s.parts[0].type:"easy";
+
+// Bulletproof plan normalization — handles any format Firebase might return
+const normalizePart = p => {
+  if(!p||typeof p!=="object") return newPart();
+  return { type:p.type||"easy", distance:p.distance||"", pace:p.pace||"", notes:p.notes||"", _showPace:!!(p.pace||p._showPace), ...(p.hillRows?{hillRows:p.hillRows}:{}) };
+};
+const normalizeSess = s => {
+  if(!s||typeof s!=="object") return newSess();
+  // has parts array
+  if(Array.isArray(s.parts)&&s.parts.length>0) return { parts:s.parts.map(normalizePart) };
+  // old format with type directly on session
+  if(s.type) return { parts:[normalizePart(s)] };
+  return newSess();
+};
+const normalizeDay = d => {
+  if(!d||typeof d!=="object") return newDay(true,[]);
+  // explicit rest
+  if(d.restDay===true||(Array.isArray(d.sessions)&&d.sessions.length===0&&d.restDay!==false)) return newDay(true,[]);
+  // old format: type directly on day
+  if(d.type==="rest") return newDay(true,[]);
+  if(d.type) return newDay(false,[{parts:[normalizePart(d)]}]);
+  // new format: has sessions array
+  if(Array.isArray(d.sessions)) {
+    if(d.sessions.length===0) return newDay(true,[]);
+    return { restDay:false, sessions:d.sessions.map(normalizeSess) };
+  }
+  return newDay(true,[]);
+};
+const migratePlan = plan => {
+  if(!plan||typeof plan!=="object") return {};
+  const r={};
+  DAYS.forEach(day=>{ r[day]=normalizeDay(plan[day]); });
+  return r;
+};
+
+const fb = () => window._firebase;
+
+const dbGetPlan = async (athleteId, off=0) => {
+  const {db, collection:col, getDocs} = fb();
+  try {
+    const weeksRef = col(db, `plans/${athleteId}/weeks`);
+    const snap = await getDocs(weeksRef);
+    if (snap.empty) return null;
+    const docList = [];
+    snap.forEach(d => docList.push({id:d.id, data:d.data()}));
+    const wk = weekKey(off);
+    // Try exact match first
+    const exact = docList.find(d => d.id === wk);
+    if (exact) return exact.data;
+    // Try ±2 days to handle any timezone edge case
+    for (let delta = -2; delta <= 2; delta++) {
+      if (delta === 0) continue;
+      const base = new Date(wk + "T12:00:00");
+      base.setDate(base.getDate() + delta);
+      const tryKey = `${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,"0")}-${String(base.getDate()).padStart(2,"0")}`;
+      const found = docList.find(d => d.id === tryKey);
+      if (found) return found.data;
+    }
+    // Last resort: most recent document
+    docList.sort((a,b) => b.id.localeCompare(a.id));
+    return docList[0]?.data || null;
+  } catch(e) {
+    console.error("dbGetPlan error:", e);
+    return null;
+  }
+};
+
+const dbGet = async (path) => {
+  const {db,doc,getDoc} = fb();
+  const snap = await getDoc(doc(db,...path.split("/")));
+  return snap.exists() ? snap.data() : null;
+};
+const dbSet = async (path, data) => {
+  const {db,doc,setDoc} = fb();
+  await setDoc(doc(db,...path.split("/")), data, {merge:true});
+};
+const dbDel = async (path) => {
+  const {db,doc,deleteDoc} = fb();
+  await deleteDoc(doc(db,...path.split("/")));
+};
+const dbList = async (col) => {
+  const {db,collection,getDocs} = fb();
+  const snap = await getDocs(collection(db,col));
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+};
+
+// ── Small UI components ───────────────────────────────────────────────────────
+const Avatar = ({name,level,size=38}) => {
+  const c=LVL[level]||LVL.recreational;
+  return h("div",{style:{width:size,height:size,borderRadius:"50%",flexShrink:0,background:c.bg,color:c.color,border:`1.5px solid ${c.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size>40?15:12,fontWeight:700}},initials(name));
+};
+const StatCard = ({label,value,accent}) =>
+  h("div",{className:"sc"},h("div",{className:"sl"},label),h("div",{className:"sv",style:{color:accent||"#0F1117"}},value));
+const Toast = ({msg,ok}) =>
+  h("div",{className:"toast",style:{background:ok?"#E8F8F0":"#FCEAEA",color:ok?"#1A7A43":"#902020",border:`0.5px solid ${ok?"#2ECC71":"#E05C5C"}`}},msg);
+const Spinner = () => h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"3rem"}},h("div",{className:"spin"}));
+const Modal = ({title,onClose,children,wide}) =>
+  h("div",{className:"mo",onClick:e=>{if(e.target===e.currentTarget)onClose();}},
+    h("div",{className:"mb",style:{maxWidth:wide?720:460}},
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
+        h("div",{style:{fontSize:17,fontWeight:700}},title),
+        h("button",{onClick:onClose,style:{border:"none",background:"none",fontSize:24,cursor:"pointer",color:"#8A9BB0",lineHeight:1}},"×")
+      ),children
+    )
+  );
+
+// WeekStrip
+const WeekStrip = ({plan={},reports={},compact=false}) =>
+  h("div",{style:{display:"flex",gap:3,marginTop:compact?8:12}},
+    DAYS.map(day=>{
+      const d=plan[day],r=reports[day],isRest=dayIsRest(d),sessions=d?.sessions||[];
+      return h("div",{key:day,style:{flex:1,textAlign:"center"}},
+        !compact&&h("div",{style:{fontSize:9,color:"#8A9BB0",marginBottom:3,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}},day),
+        isRest
+          ? h("div",{style:{height:compact?20:28,borderRadius:3,background:"#F0F3F7",border:"1.5px solid #CBD5E0",opacity:.35}})
+          : h("div",{style:{display:"flex",flexDirection:"column",gap:2}},
+              sessions.map((sess,si)=>{
+                const wt=WT[sessFirstType(sess)]||WT.easy;
+                const rep=r?.sessions?.[si];
+                const done=rep?.status==="done",mod=rep?.status==="modified",skip=rep?.status==="skipped";
+                const bh=sessions.length>1?Math.max(12,(compact?20:28)/sessions.length):(compact?20:28);
+                return h("div",{key:si,style:{height:bh,borderRadius:3,background:skip?"#F0F3F7":wt.bg,border:`1.5px solid ${(done||mod)?wt.color:skip?"#CBD5E0":wt.color+"55"}`,display:"flex",alignItems:"center",justifyContent:"center"}},
+                  done&&h("span",{style:{fontSize:9,color:wt.dark,fontWeight:700}},"✓"),
+                  skip&&h("span",{style:{fontSize:9,color:"#8A9BB0"}},"✕"),
+                  mod&&h("span",{style:{fontSize:9,color:wt.dark}},"~"),
+                  !rep&&sessTotalKm(sess)>0&&h("span",{style:{fontSize:7,fontWeight:700,color:wt.dark,fontFamily:"monospace"}},sessTotalKm(sess).toFixed(0)+"k")
+                );
+              })
+            )
+      );
+    })
+  );
+
+// ── Part Editor ───────────────────────────────────────────────────────────────
+const HillPlanRows = ({part, onChange}) => {
+  const rows = part.hillRows || [{sets:"",reps:"",distM:""}];
+  const update = (i,k,v) => {
+    const nr=[...rows]; nr[i]={...nr[i],[k]:v};
+    const totalKm=nr.reduce((t,r)=>{
+      const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+      return t+(sets*reps*dist/1000);
+    },0);
+    onChange({...part, hillRows:nr, distance:totalKm.toFixed(3)});
+  };
+  const addRow = () => onChange({...part, hillRows:[...rows,{sets:"",reps:"",distM:""}]});
+  const removeRow = i => {
+    const nr=rows.filter((_,idx)=>idx!==i);
+    const totalKm=nr.reduce((t,r)=>{
+      const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+      return t+(sets*reps*dist/1000);
+    },0);
+    onChange({...part, hillRows:nr, distance:totalKm.toFixed(3)});
+  };
+  const totalKm=rows.reduce((t,r)=>{
+    const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+    return t+(sets*reps*dist/1000);
+  },0);
+  return h("div",{style:{marginTop:6}},
+    h("div",{style:{display:"grid",gridTemplateColumns:"70px 70px 70px 1fr 20px",gap:5,marginBottom:4,alignItems:"center"}},
+      h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:600}},"Sets"),
+      h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:600}},"Reps"),
+      h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:600}},"Dist (m)"),
+      h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:600}},"= km"),
+      h("div")
+    ),
+    rows.map((row,i)=>{
+      const sets=parseFloat(row.sets)||1, reps=parseFloat(row.reps)||0, dist=parseFloat(row.distM)||0;
+      const rowKm=(sets*reps*dist/1000);
+      return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"70px 70px 70px 1fr 20px",gap:5,marginBottom:5,alignItems:"center"}},
+        h("input",{type:"number",value:row.sets,onChange:e=>update(i,"sets",e.target.value),placeholder:"2",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+        h("input",{type:"number",value:row.reps,onChange:e=>update(i,"reps",e.target.value),placeholder:"4",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+        h("input",{type:"number",value:row.distM,onChange:e=>update(i,"distM",e.target.value),placeholder:"120",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+        h("div",{style:{fontSize:11,color:"#0F1117",fontFamily:"monospace",paddingLeft:4}}, rowKm>0?rowKm.toFixed(3)+" km":"—"),
+        rows.length>1?h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"#E05C5C",fontSize:14,lineHeight:1,padding:0}},"×"):h("div")
+      );
+    }),
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
+      h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
+      totalKm>0&&h("span",{style:{fontSize:11,fontWeight:700,color:"#0F1117",fontFamily:"monospace"}},"Total: "+totalKm.toFixed(3)+" km")
+    )
+  );
+};
+
+const PartEditor = ({part,onChange,onRemove,index,total}) => {
+  const wt=WT[part.type]||WT.easy;
+  const isHills = part.type==="hills";
+  return h("div",{style:{display:"flex",alignItems:"flex-start",gap:6,marginBottom:6,padding:"8px 10px",borderRadius:6,background:"#fff",border:`0.5px solid ${wt.color}44`,borderLeft:`3px solid ${wt.color}`}},
+    h("div",{style:{flex:1}},
+      h("div",{className:"row",style:{marginBottom:5}},
+        h("span",{style:{fontSize:10,fontWeight:700,color:"#8A9BB0",minWidth:50}},"Part "+(index+1)),
+        h("select",{value:part.type,onChange:e=>onChange({...part,type:e.target.value,hillRows:undefined,distance:""}),style:{width:"auto",fontSize:12,fontWeight:600,color:wt.dark,padding:"3px 6px",border:"0.5px solid #CBD5E0",borderRadius:4}},
+          Object.entries(WT).filter(([k])=>k!=="rest").map(([k,v])=>h("option",{key:k,value:k},v.label))
+        ),
+        !isHills&&h(Fragment,null,
+          h("span",{style:{fontSize:11,color:"#8A9BB0"}},"Total KMs"),
+          h("input",{value:part.distance,onChange:e=>onChange({...part,distance:e.target.value}),placeholder:"0",style:{width:48,fontSize:12,padding:"3px 6px",fontFamily:"'DM Mono',monospace",border:"0.5px solid #CBD5E0",borderRadius:4}}),
+          part._showPace
+            ? h(Fragment,null,
+                h("span",{style:{fontSize:11,color:"#8A9BB0"}},"@ "),
+                h("input",{value:part.pace||"",onChange:e=>onChange({...part,pace:e.target.value}),placeholder:"5:30",style:{width:52,fontSize:12,padding:"3px 6px",fontFamily:"'DM Mono',monospace",border:"0.5px solid #CBD5E0",borderRadius:4}}),
+                h("span",{style:{fontSize:11,color:"#8A9BB0"}},"/km"),
+                h("button",{onClick:()=>onChange({...part,pace:"",_showPace:false}),style:{border:"none",background:"none",cursor:"pointer",color:"#CBD5E0",fontSize:13,lineHeight:1}},"×")
+              )
+            : h("button",{onClick:()=>onChange({...part,_showPace:true}),className:"btn btns",style:{fontSize:11,padding:"3px 8px",color:"#8A9BB0"}},"+  Add pace")
+        ),
+        isHills&&h("span",{style:{fontSize:11,color:"#8A9BB0",fontFamily:"monospace"}},part.distance?part.distance+" km total":"")
+      ),
+      isHills
+        ? h(HillPlanRows,{part,onChange})
+        : h("input",{value:part.notes,onChange:e=>onChange({...part,notes:e.target.value}),placeholder:"Details for this part…",style:{fontSize:11,padding:"4px 7px",color:"#4A5568",width:"100%",border:"0.5px solid #E2E8F0",borderRadius:4}})
+      ,
+      isHills&&h("input",{value:part.notes,onChange:e=>onChange({...part,notes:e.target.value}),placeholder:"Additional notes…",style:{fontSize:11,padding:"4px 7px",color:"#4A5568",width:"100%",border:"0.5px solid #E2E8F0",borderRadius:4,marginTop:6}})
+    ),
+    total>1&&h("button",{onClick:onRemove,style:{border:"none",background:"none",cursor:"pointer",color:"#E05C5C",fontSize:16,lineHeight:1,paddingTop:2,flexShrink:0}},"×")
+  );
+};
+
+const SessionEditor = ({session,onChange,onRemove,index,total}) => {
+  const parts=session.parts||[newPart()];
+  const updatePart=(i,p)=>{const np=[...parts];np[i]=p;onChange({...session,parts:np});};
+  const addPart=()=>onChange({...session,parts:[...parts,newPart()]});
+  const removePart=i=>onChange({...session,parts:parts.filter((_,idx)=>idx!==i)});
+  const km=sessTotalKm(session);
+  return h("div",{className:"sblk",style:{borderLeft:"3px solid #F5A623",marginBottom:10}},
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        total>1&&h("span",{style:{fontSize:10,fontWeight:700,color:"#8A9BB0",textTransform:"uppercase",letterSpacing:"0.06em"}},"Session "+(index+1)),
+        km>0&&h("span",{className:"mono",style:{fontSize:12,color:"#8A9BB0"}},"Total KMs: "+km.toFixed(1)+" km")
+      ),
+      h("div",{style:{display:"flex",alignItems:"center",gap:6}},
+        h("button",{onClick:addPart,className:"btn btns"},"+  Add part"),
+        total>1&&h("button",{onClick:onRemove,style:{border:"none",background:"none",cursor:"pointer",color:"#E05C5C",fontSize:18,lineHeight:1}},"×")
+      )
+    ),
+    parts.map((part,i)=>h(PartEditor,{key:i,part,index:i,total:parts.length,onChange:p=>updatePart(i,p),onRemove:()=>removePart(i)}))
+  );
+};
+
+// ── Plan Editor ───────────────────────────────────────────────────────────────
+const PlanEditor = ({plan,onSave,onCancel,groupName}) => {
+  const [local,setLocal]=useState(()=>{
+    const p={};
+    DAYS.forEach(day=>{
+      const d=plan[day];
+      if(!d){p[day]=newDay(true,[]);return;}
+      p[day]={...d,sessions:(d.sessions||[]).map(s=>({...s,parts:(s.parts||[]).map(pp=>({...pp}))}))};
+    });
+    return p;
+  });
+  const toggleRest=day=>setLocal(p=>({...p,[day]:{...p[day],restDay:!p[day].restDay,sessions:p[day].restDay?[newSess()]:[]}}));
+  const addSess   =day=>setLocal(p=>({...p,[day]:{...p[day],sessions:[...p[day].sessions,newSess()]}}));
+  const updSess   =(day,i,s)=>setLocal(p=>{const ss=[...p[day].sessions];ss[i]=s;return{...p,[day]:{...p[day],sessions:ss}};});
+  const remSess   =(day,i)=>setLocal(p=>{const ss=p[day].sessions.filter((_,idx)=>idx!==i);return{...p,[day]:{...p[day],sessions:ss}};});
+  const totalKm=DAYS.reduce((s,d)=>s+dayTotalKm(local[d]),0);
+  return h("div",null,
+    groupName&&h("div",{style:{marginBottom:12,padding:"8px 12px",background:"#FEF3E0",borderRadius:8,fontSize:13,color:"#9A6610",fontWeight:500}},"📋 Group plan for: "+groupName),
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,padding:"10px 14px",background:"#F7F8FA",borderRadius:8}},
+      h("span",{style:{fontSize:13,color:"#4A5568"}},"Weekly volume"),
+      h("span",{className:"mono",style:{fontSize:18,fontWeight:700}},"Total volume: "+Math.round(totalKm)+" km")
+    ),
+    DAYS.map(day=>{
+      const d=local[day],isRest=d.restDay||d.sessions.length===0;
+      return h("div",{key:day,style:{border:"0.5px solid #E2E8F0",borderRadius:10,padding:"12px 14px",marginBottom:8,background:isRest?"#FAFBFC":"#fff"}},
+        h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:isRest?0:10}},
+          h("div",{style:{fontSize:11,fontWeight:700,color:"#8A9BB0",width:28,textTransform:"uppercase",letterSpacing:"0.06em",flexShrink:0}},day),
+          h("label",{style:{display:"flex",alignItems:"center",gap:6,fontSize:13,cursor:"pointer",userSelect:"none"}},
+            h("input",{type:"checkbox",checked:!isRest,onChange:()=>toggleRest(day),style:{width:15,height:15,cursor:"pointer",accentColor:"#F5A623"}}),
+            h("span",{style:{color:isRest?"#8A9BB0":"#0F1117",fontWeight:isRest?400:500}},isRest?"Rest / Off day":"Training day")
+          ),
+          !isRest&&h("button",{onClick:()=>addSess(day),className:"btn btns",style:{marginLeft:"auto"}},"+  Add session")
+        ),
+        !isRest&&d.sessions.map((sess,i)=>h(SessionEditor,{key:i,session:sess,index:i,total:d.sessions.length,onChange:s=>updSess(day,i,s),onRemove:()=>remSess(day,i)}))
+      );
+    }),
+    h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}},
+      h("button",{className:"btn",onClick:onCancel},"Cancel"),
+      h("button",{className:"btnp",onClick:()=>onSave(local)},"Save plan")
+    )
+  );
+};
+
+// ── Athlete Form ──────────────────────────────────────────────────────────────
+const AthleteForm = ({initial,groups,onSave,onCancel}) => {
+  const blank={name:"",level:"recreational",age:"",pb5k:"",pb10k:"",pbHalf:"",pbMarathon:"",events:"",notes:"",groupId:"",email:"",password:""};
+  const [f,setF]=useState(initial||blank);
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const fi=(label,k,ph,type="text",mono=false)=>h("div",null,h("label",{className:"lbl"},label),h("input",{type,value:f[k]||"",onChange:e=>s(k,e.target.value),placeholder:ph,style:{fontFamily:mono?"'DM Mono',monospace":"inherit"}}));
+  return h("div",null,
+    h("div",{style:{marginBottom:12}},h("label",{className:"lbl"},"Full name"),h("input",{value:f.name,onChange:e=>s("name",e.target.value),placeholder:"e.g. Sara Cohen"})),
+    !initial&&h("div",{style:{background:"#EEF6FF",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:12,color:"#1A5FA0"}},"💡 An email and password are required so the athlete can log in to the app."),
+    !initial&&h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12},className:"gr2"},
+      fi("Athlete email (for login)","email","sara@example.com","email"),
+      fi("Temporary password","password","min. 6 characters","password")
+    ),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12},className:"gr2"},
+      h("div",null,h("label",{className:"lbl"},"Level"),h("select",{value:f.level,onChange:e=>s("level",e.target.value)},h("option",{value:"recreational"},"Recreational"),h("option",{value:"serious"},"Serious"))),
+      h("div",null,h("label",{className:"lbl"},"Group"),h("select",{value:f.groupId||"",onChange:e=>s("groupId",e.target.value)},
+        h("option",{value:""},"No group"),
+        (groups||[]).map(g=>h("option",{key:g.id,value:g.id},g.name))
+      )),
+      fi("Age","age","28","number"),fi("5K PB","pb5k","18:30","text",true),
+      fi("10K PB","pb10k","38:20","text",true),fi("Half marathon PB","pbHalf","1:24:00","text",true),
+      fi("Marathon PB","pbMarathon","3:10:00","text",true),fi("Events / distances","events","5K, 10K, Half")
+    ),
+    h("div",{style:{marginBottom:16}},h("label",{className:"lbl"},"Notes"),h("textarea",{value:f.notes||"",onChange:e=>s("notes",e.target.value),rows:3,placeholder:"Injuries, goals, schedule preferences…"})),
+    h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end"}},
+      h("button",{className:"btn",onClick:onCancel},"Cancel"),
+      h("button",{className:"btnp",onClick:()=>{if(f.name.trim())onSave(f);}},"Save athlete")
+    )
+  );
+};
+
+// ── Per-type report fields ────────────────────────────────────────────────────
+const TypedRepFields = ({type, existing, onChange, planPart}) => {
+  const [f, setF] = useState(()=>{
+    const base = existing||{};
+    // For hills: if no existing report data, pre-populate from plan's hillRows
+    if (type==="hills" && !base.hillRows && planPart?.hillRows?.length>0) {
+      return {...base, hillRows: planPart.hillRows.map(r=>({...r}))};
+    }
+    return base;
+  });
+  const s = (k,v) => { const nx={...f,[k]:v}; setF(nx); onChange(nx); };
+
+  if (type==="easy"||type==="recovery") return h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
+    h("div",null,h("label",{className:"lbl"},"Actual distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"})),
+    h("div",null,h("label",{className:"lbl"},"Actual pace (mm:ss)"),h("input",{value:f.actualPace||"",onChange:e=>s("actualPace",e.target.value),placeholder:"e.g. 5:30",className:"mono"}))
+  );
+
+  if (type==="tempo") return h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
+    h("div",null,h("label",{className:"lbl"},"Actual total distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"})),
+    h("div",null,h("label",{className:"lbl"},"Tempo pace (mm:ss)"),h("input",{value:f.tempoPace||"",onChange:e=>s("tempoPace",e.target.value),placeholder:"e.g. 4:40",className:"mono"}))
+  );
+
+  if (type==="interval") return h("div",{style:{marginBottom:8}},
+    h("div",null,h("label",{className:"lbl"},"Actual total distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono",style:{marginBottom:8}})),
+    h("div",null,
+      h("label",{className:"lbl"},"Split times / averages (write freely)"),
+      h("textarea",{value:f.splitNotes||"",onChange:e=>s("splitNotes",e.target.value),rows:4,placeholder:"e.g. 8×800m: 3:12, 3:10, 3:11, 3:09, 3:11, 3:10, 3:08, 3:07\nAvg: 3:10"})
+    )
+  );
+
+  if (type==="long") {
+    const part2Type = f.part2Type||"speedgame";
+    return h("div",{style:{marginBottom:8}},
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}},
+        h("div",null,h("label",{className:"lbl"},"Actual total distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"})),
+        h("div",null,h("label",{className:"lbl"},"Total average pace (mm:ss)"),h("input",{value:f.avgPace||"",onChange:e=>s("avgPace",e.target.value),placeholder:"e.g. 5:10",className:"mono"}))
+      ),
+      h("div",{style:{marginBottom:10}},
+        h("label",{className:"lbl"},"Part 1 — base pace (mm:ss)"),
+        h("input",{value:f.part1Pace||"",onChange:e=>s("part1Pace",e.target.value),placeholder:"e.g. 5:30",className:"mono"})
+      ),
+      h("div",{style:{marginBottom:8}},
+        h("label",{className:"lbl"},"Part 2 — type"),
+        h("div",{style:{display:"flex",gap:6,marginBottom:10}},
+          ["steady","progression","speedgame"].map(t=>
+            h("button",{key:t,onClick:()=>s("part2Type",t),style:{flex:1,padding:"6px 0",borderRadius:6,cursor:"pointer",fontWeight:600,fontSize:12,
+              border:part2Type===t?"2px solid #F5A623":"0.5px solid #E2E8F0",
+              background:part2Type===t?"#FEF3E0":"#fff",
+              color:part2Type===t?"#9A6610":"#8A9BB0"
+            }},t==="steady"?"Steady":t==="progression"?"Progression":"Speed game")
+          )
+        ),
+        part2Type==="steady"&&h("div",null,
+          h("label",{className:"lbl"},"Steady pace (mm:ss)"),
+          h("input",{value:f.part2Pace||"",onChange:e=>s("part2Pace",e.target.value),placeholder:"e.g. 4:50",className:"mono"})
+        ),
+        part2Type==="progression"&&h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+          h("div",null,h("label",{className:"lbl"},"Start pace (mm:ss)"),h("input",{value:f.progStart||"",onChange:e=>s("progStart",e.target.value),placeholder:"e.g. 5:10",className:"mono"})),
+          h("div",null,h("label",{className:"lbl"},"Finish pace (mm:ss)"),h("input",{value:f.progEnd||"",onChange:e=>s("progEnd",e.target.value),placeholder:"e.g. 4:30",className:"mono"}))
+        ),
+        part2Type==="speedgame"&&h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+          h("div",null,h("label",{className:"lbl"},"Faster pace (mm:ss)"),h("input",{value:f.fasterPace||"",onChange:e=>s("fasterPace",e.target.value),placeholder:"e.g. 4:20",className:"mono"})),
+          h("div",null,h("label",{className:"lbl"},"Transition pace (mm:ss)"),h("input",{value:f.transitionPace||"",onChange:e=>s("transitionPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
+        )
+      )
+    );
+  }
+
+  if (type==="fartlek") return h("div",{style:{marginBottom:8}},
+    h("div",null,h("label",{className:"lbl"},"Actual total distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono",style:{marginBottom:8}})),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+      h("div",null,h("label",{className:"lbl"},"Faster pace (mm:ss)"),h("input",{value:f.fasterPace||"",onChange:e=>s("fasterPace",e.target.value),placeholder:"e.g. 4:10",className:"mono"})),
+      h("div",null,h("label",{className:"lbl"},"Transition pace (mm:ss)"),h("input",{value:f.transitionPace||"",onChange:e=>s("transitionPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
+    )
+  );
+
+  if (type==="hills") {
+    const rows = f.hillRows || [{sets:"",reps:"",distM:""}];
+    const updateRow = (i,k,v) => {
+      const nr=[...rows]; nr[i]={...nr[i],[k]:v};
+      s("hillRows",nr);
+      const totalKm=nr.reduce((t,r)=>{
+        const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+        return t+(sets*reps*dist/1000);
+      },0);
+      s("actualDistance",totalKm.toFixed(3));
+    };
+    const addRow = () => s("hillRows",[...rows,{sets:"",reps:"",distM:""}]);
+    const removeRow = i => {
+      const nr=rows.filter((_,idx)=>idx!==i);
+      s("hillRows",nr);
+      const totalKm=nr.reduce((t,r)=>{
+        const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+        return t+(sets*reps*dist/1000);
+      },0);
+      s("actualDistance",totalKm.toFixed(3));
+    };
+    const totalHillKm=rows.reduce((t,r)=>{
+      const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+      return t+(sets*reps*dist/1000);
+    },0);
+    return h("div",{style:{marginBottom:8}},
+      h("div",{style:{fontSize:11,fontWeight:700,color:"#4A5568",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}},"Hill sets"),
+      h("div",{style:{display:"grid",gridTemplateColumns:"80px 80px 80px 1fr 24px",gap:6,marginBottom:4,alignItems:"center"}},
+        h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:600}},"Sets"),
+        h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:600}},"Reps"),
+        h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:600}},"Dist (m)"),
+        h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:600}},"= km"),
+        h("div")
+      ),
+      rows.map((row,i)=>{
+        const sets=parseFloat(row.sets)||1, reps=parseFloat(row.reps)||0, dist=parseFloat(row.distM)||0;
+        const rowKm=(sets*reps*dist/1000);
+        return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"80px 80px 80px 1fr 24px",gap:6,marginBottom:6,alignItems:"center"}},
+          h("input",{type:"number",value:row.sets,onChange:e=>updateRow(i,"sets",e.target.value),placeholder:"2",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
+          h("input",{type:"number",value:row.reps,onChange:e=>updateRow(i,"reps",e.target.value),placeholder:"4",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
+          h("input",{type:"number",value:row.distM,onChange:e=>updateRow(i,"distM",e.target.value),placeholder:"120",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
+          h("div",{style:{fontSize:12,color:"#0F1117",fontFamily:"monospace",padding:"0 4px"}},
+            rowKm>0 ? rowKm.toFixed(3)+" km" : "—"
+          ),
+          rows.length>1
+            ? h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"#E05C5C",fontSize:16,lineHeight:1,padding:0}},"×")
+            : h("div")
+        );
+      }),
+      h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
+        h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
+        totalHillKm>0&&h("div",{style:{fontSize:13,fontWeight:700,color:"#0F1117"}},
+          "Total hill distance: ",h("span",{className:"mono"},totalHillKm.toFixed(3)," km")
+        )
+      )
+    );
+  }
+
+  if (type==="strength") return h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
+    h("div",null,h("label",{className:"lbl"},"Duration (minutes)"),h("input",{type:"number",value:f.duration||"",onChange:e=>s("duration",e.target.value),placeholder:"e.g. 45"})),
+    h("div",null,h("label",{className:"lbl"},"Actual distance (km) — optional"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"}))
+  );
+
+  if (type==="race") return h("div",{style:{marginBottom:8}},
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
+      h("div",null,h("label",{className:"lbl"},"Finish time (hh:mm:ss)"),h("input",{value:f.finishTime||"",onChange:e=>s("finishTime",e.target.value),placeholder:"e.g. 1:23:45",className:"mono"})),
+      h("div",null,h("label",{className:"lbl"},"Official distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"e.g. 10",className:"mono"}))
+    ),
+    h("div",null,
+      h("label",{className:"lbl"},"Splits (write freely)"),
+      h("textarea",{value:f.splits||"",onChange:e=>s("splits",e.target.value),rows:3,placeholder:"e.g. 5km: 22:30 | 10km: 45:10 | 15km: 1:08:20"})
+    )
+  );
+
+  // Default fallback
+  return h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
+    h("div",null,h("label",{className:"lbl"},"Actual distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"})),
+    h("div",null,h("label",{className:"lbl"},"Actual pace (mm:ss)"),h("input",{value:f.actualPace||"",onChange:e=>s("actualPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
+  );
+};
+
+const PartRepForm = ({part, index, total, existing, onChange}) => {
+  const wt = WT[part.type]||WT.easy;
+  const [typeData, setTypeData] = useState(existing?.typeData||{actualDistance:part.distance||""});
+  const emit = (td) => onChange({...existing, typeData:td, actualDistance:td.actualDistance||part.distance||""});
+
+  return h("div",{style:{padding:"8px 10px", marginBottom:6, borderRadius:6, background:"#fff", borderLeft:`3px solid ${wt.color}`, border:`0.5px solid ${wt.color}33`, borderLeft:`3px solid ${wt.color}`}},
+    h("div",{style:{fontSize:11, fontWeight:700, color:wt.dark, marginBottom:6}},
+      (total>1?"Part "+(index+1)+": ":"")+wt.label+(part.distance?" · Planned: "+part.distance+"km":"")
+    ),
+    h(TypedRepFields,{type:part.type, existing:typeData, planPart:part, onChange:td=>{ setTypeData(td); emit(td); }})
+  );
+};
+
+const SessRepForm = ({session, existing, onChange}) => {
+  const parts = session.parts||[{type:"easy",distance:"",pace:""}];
+  const wt = WT[sessFirstType(session)]||WT.easy;
+  const km = sessTotalKm(session);
+  const multiPart = parts.length > 1;
+
+  const initPartReps = parts.map((p,i) => existing?.partReps?.[i]||{typeData:{actualDistance:p.distance||""}});
+  const [partReps, setPartReps] = useState(initPartReps);
+  const [f, setF] = useState(existing||{status:"done", effort:"6", hr:"", notes:""});
+
+  const s = (k,v) => { const nx={...f,[k]:v}; setF(nx); emitAll(nx, partReps); };
+  const updatePart = (i,v) => { const n=[...partReps]; n[i]=v; setPartReps(n); emitAll(f,n); };
+  const emitAll = (ff, pr) => {
+    const totalActual = pr.reduce((s,p)=>s+(parseFloat(p.typeData?.actualDistance||p.actualDistance)||0),0);
+    onChange({...ff, partReps:pr, actualDistance:totalActual.toFixed(1)});
+  };
+
+  return h("div",{style:{background:"#F7F8FA", borderRadius:8, padding:"12px 14px", marginBottom:10, borderLeft:`3px solid ${wt.color}`}},
+    h("div",{style:{fontSize:12, fontWeight:700, color:wt.dark, marginBottom:8}},
+      wt.label+(km>0?` · Total KMs: ${km.toFixed(1)} km`:"")
+    ),
+    h("div",{style:{display:"flex", gap:6, marginBottom:10}},
+      Object.entries(SS).map(([st,ss])=>h("button",{key:st, onClick:()=>s("status",st), style:{flex:1,padding:"7px 0",borderRadius:6,cursor:"pointer",fontWeight:600,fontSize:12,border:f.status===st?`2px solid ${ss.border}`:"0.5px solid #E2E8F0",background:f.status===st?ss.bg:"#fff",color:f.status===st?ss.color:"#8A9BB0"}},ss.label))
+    ),
+    f.status!=="skipped"&&h("div",null,
+      multiPart
+        ? h("div",null,
+            h("div",{style:{fontSize:11,fontWeight:700,color:"#4A5568",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}},"Report per part:"),
+            parts.map((part,i)=>h(PartRepForm,{key:i,part,index:i,total:parts.length,existing:partReps[i],onChange:v=>updatePart(i,v)})),
+            h("div",{style:{fontSize:12,color:"#8A9BB0",marginTop:6,marginBottom:8,fontFamily:"'DM Mono',monospace"}},
+              "Total actual: ",h("strong",{style:{color:"#0F1117"}},partReps.reduce((s,p)=>s+(parseFloat(p.typeData?.actualDistance||p.actualDistance)||0),0).toFixed(1)+" km")
+            )
+          )
+        : h(TypedRepFields,{type:parts[0]?.type||"easy", existing:partReps[0]?.typeData, planPart:parts[0], onChange:td=>updatePart(0,{typeData:td,actualDistance:td.actualDistance||""})}),
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8,marginTop:8}},
+        h("div",null,h("label",{className:"lbl"},"Avg HR (bpm)"),h("input",{type:"number",value:f.hr,onChange:e=>s("hr",e.target.value),placeholder:"e.g. 148 — optional",className:"vague"})),
+        h("div",null,
+          h("label",{className:"lbl"},"Effort: ",h("strong",{style:{color:wt.dark}},f.effort+"/10")),
+          h("input",{type:"range",min:"1",max:"10",step:"1",value:f.effort,onChange:e=>s("effort",e.target.value),style:{width:"100%",marginTop:6,accentColor:wt.color}}),
+          h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,color:"#8A9BB0"}},h("span","Easy"),h("span","Max"))
+        )
+      ),
+      h("div",null,h("label",{className:"lbl"},"Notes"),h("textarea",{value:f.notes,onChange:e=>s("notes",e.target.value),rows:2,placeholder:"How did it feel?"}))
+    )
+  );
+};
+
+const SliderScale = ({label,value,onChange,leftLabel,rightLabel,reverse=false}) => {
+  const colors=reverse
+    ? ["#2ECC71","#84CC16","#F5A623","#F97316","#E05C5C"]  // 1=green, 5=red (stress)
+    : ["#E05C5C","#F97316","#F5A623","#84CC16","#2ECC71"]; // 1=red, 5=green (sleep)
+  const c = colors[parseInt(value)-1]||"#8A9BB0";
+  return h("div",{style:{flex:1}},
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}},
+      h("label",{className:"lbl",style:{margin:0,fontSize:11}},label),
+      h("span",{style:{fontSize:14,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}},value+"/5")
+    ),
+    h("input",{type:"range",min:"1",max:"5",step:"1",value:value,onChange:e=>onChange(e.target.value),style:{width:"100%",accentColor:c}}),
+    h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:9,color:"#8A9BB0",marginTop:1}},
+      h("span",leftLabel),h("span",rightLabel)
+    )
+  );
+};
+
+const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
+  const init=existingReport?.sessions||[];
+  const [reps,setReps]=useState(daySessions.map((sess,i)=>init[i]?{...init[i]}:{status:"done",effort:"6",hr:"",notes:""}));
+  const [sleep,setSleep]=useState(existingReport?.sleep||"3");
+  const [stress,setStress]=useState(existingReport?.stress||"3");
+  const [wu,setWu]=useState(existingReport?.wu||"");
+  const [cd,setCd]=useState(existingReport?.cd||"");
+  const upd=(i,v)=>setReps(r=>{const n=[...r];n[i]=v;return n;});
+
+  const mainKm = reps.reduce((s,r)=>s+(parseFloat(r.actualDistance)||0),0);
+  const totalKm = (parseFloat(wu)||0) + mainKm + (parseFloat(cd)||0);
+
+  return h("div",null,
+    h("div",{style:{marginBottom:14,fontSize:13,color:"#8A9BB0"}},daySessions.length+" session"+(daySessions.length>1?"s":"")+" planned for "+day),
+    // Wellbeing
+    h("div",{style:{background:"#F7F8FA",borderRadius:8,padding:"14px 16px",marginBottom:12,border:"0.5px solid #E2E8F0"}},
+      h("div",{style:{fontSize:12,fontWeight:700,color:"#4A5568",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}},"How are you feeling today?"),
+      h("div",{style:{display:"flex",gap:16}},
+        h(SliderScale,{label:"😴 Sleep quality",value:sleep,onChange:setSleep,leftLabel:"Poor",rightLabel:"Excellent",reverse:false}),
+        h(SliderScale,{label:"🧠 Stress level",value:stress,onChange:setStress,leftLabel:"Relaxed",rightLabel:"Stressed",reverse:true})
+      )
+    ),
+    // WU + CD
+    h("div",{style:{background:"#F0F8FF",borderRadius:8,padding:"12px 14px",marginBottom:12,border:"0.5px solid #CBD5E0"}},
+      h("div",{style:{fontSize:12,fontWeight:700,color:"#4A5568",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}},"Warm up & Cool down"),
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+        h("div",null,
+          h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
+          h("input",{type:"number",value:wu,onChange:e=>setWu(e.target.value),placeholder:"e.g. 3",className:"mono",step:"0.1"})
+        ),
+        h("div",null,
+          h("label",{className:"lbl"},"Cool down KMs"),
+          h("input",{type:"number",value:cd,onChange:e=>setCd(e.target.value),placeholder:"e.g. 2",className:"mono",step:"0.1"})
+        )
+      )
+    ),
+    // Sessions
+    daySessions.map((sess,i)=>h(SessRepForm,{key:i,session:sess,existing:reps[i],onChange:v=>upd(i,v)})),
+    // Total KMs summary
+    h("div",{style:{background:"#F7F8FA",borderRadius:8,padding:"10px 14px",marginBottom:12,border:"0.5px solid #E2E8F0",display:"flex",justifyContent:"space-between",alignItems:"center"}},
+      h("div",{style:{fontSize:13,color:"#4A5568"}},
+        h("span",{style:{marginRight:16}},"WU: ",h("strong",{className:"mono"},(parseFloat(wu)||0).toFixed(1)," km")),
+        h("span",{style:{marginRight:16}},"Main: ",h("strong",{className:"mono"},mainKm.toFixed(1)," km")),
+        h("span",null,"CD: ",h("strong",{className:"mono"},(parseFloat(cd)||0).toFixed(1)," km"))
+      ),
+      h("div",{style:{fontSize:15,fontWeight:700,color:"#0F1117"}},
+        "Total: ",h("span",{className:"mono",style:{color:"#F5A623"}},totalKm.toFixed(1)," km")
+      )
+    ),
+    h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}},
+      h("button",{className:"btn",onClick:onCancel},"Cancel"),
+      h("button",{className:"btnp",onClick:()=>onSave({sessions:reps,sleep,stress,wu,cd,totalKm:totalKm.toFixed(1)})},"Submit report")
+    )
+  );
+};
+
+// Extract a readable summary from a session report (new or old format)
+const repSummary = (rep, parts) => {
+  if (!rep) return null;
+  const lines = [];
+  // New format: partReps with typeData
+  if (rep.partReps && rep.partReps.length > 0) {
+    rep.partReps.forEach((pr, i) => {
+      const part = parts?.[i];
+      const td = pr.typeData || {};
+      const type = part?.type || "easy";
+      const wt = WT[type] || WT.easy;
+      const dist = parseFloat(pr.actualDistance || td.actualDistance) || 0;
+      let detail = "";
+      if (type==="easy"||type==="recovery") detail = td.actualPace ? `@ ${td.actualPace}/km` : "";
+      else if (type==="tempo") detail = td.tempoPace ? `tempo @ ${td.tempoPace}/km` : "";
+      else if (type==="interval") detail = td.splitNotes ? `splits: ${td.splitNotes.split("\n")[0].slice(0,40)}` : "";
+      else if (type==="long") {
+        if (td.avgPace) detail += `avg ${td.avgPace}/km`;
+        if (td.part1Pace) detail += ` · base ${td.part1Pace}/km`;
+        if (td.fasterPace) detail += ` · faster ${td.fasterPace}/km`;
+      }
+      else if (type==="fartlek") {
+        if (td.fasterPace) detail = `faster ${td.fasterPace}/km · transition ${td.transitionPace||"–"}/km`;
+      }
+      else if (type==="hills") {
+        const hillRows = td.hillRows||[];
+        if (hillRows.length>0) {
+          const rowDetails = hillRows.map(r=>{
+            const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+            const km=(sets*reps*dist/1000);
+            return `${sets}×${reps}×${dist}m = ${km.toFixed(3)}km`;
+          }).join(" | ");
+          detail = rowDetails;
+        }
+        if (td.actualDistance) detail += ` → total ${parseFloat(td.actualDistance).toFixed(3)}km`;
+      }
+      else if (type==="strength") detail = td.duration ? `${td.duration} min` : "";
+      else if (type==="race") detail = td.finishTime ? `finish ${td.finishTime}` : "";
+      lines.push({ label: wt.label, dist, detail, color: wt.dark });
+    });
+  } else {
+    // Old format fallback
+    const dist = parseFloat(rep.actualDistance) || 0;
+    const pace = rep.actualPace ? `@ ${rep.actualPace}/km` : "";
+    lines.push({ label: "", dist, detail: pace, color: "#4A5568" });
+  }
+  return lines;
+};
+
+const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan}) => {
+  const [editPlan,setEditPlan]=useState(false);
+  const [repDay,setRepDay]=useState(null);
+
+  const renderSessions = (day) => {
+    try {
+    const d=plan[day]||newDay(true,[]);
+    const r=reports[day];
+    const isRest=dayIsRest(d);
+    const isToday=day===today&&weekOff===0;
+    const sessions=d.sessions||[];
+    const firstWt=sessions.length>0?(WT[sessFirstType(sessions[0])]||WT.easy):WT.rest;
+    const dailyKm=dayTotalKm(d);
+
+    return h("div",{key:day,className:"dr",style:{borderColor:isToday?firstWt.color:"#E2E8F0",borderWidth:isToday?2:.5,background:isRest?"#FAFBFC":"#fff"}},
+      h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
+        h("div",{style:{width:30,flexShrink:0,textAlign:"center"}},
+          h("div",{style:{fontSize:10,fontWeight:700,color:isToday?firstWt.dark:"#8A9BB0",textTransform:"uppercase",letterSpacing:"0.06em"}},day),
+          isToday&&h("div",{style:{width:5,height:5,borderRadius:"50%",background:firstWt.color,margin:"3px auto 0"}})
+        ),
+        h("div",{style:{flex:1}},
+          isRest
+            ? h("span",{style:{fontSize:13,color:"#CBD5E0",fontWeight:500}},"Rest / Off")
+            : h("div",null,
+                sessions.length>1&&h("div",{style:{fontSize:12,fontWeight:700,color:"#0F1117",marginBottom:10,padding:"6px 10px",background:"#F7F8FA",borderRadius:6,borderLeft:"3px solid #F5A623"}},
+                  "Daily total KMs: ",h("span",{className:"mono"},dailyKm.toFixed(1)+" km")
+                ),
+                sessions.map((sess,si)=>{
+                  const parts=(sess&&sess.parts&&sess.parts.length>0)?sess.parts:[{type:"easy",distance:"",pace:"",notes:"",_showPace:false}];
+                  const rep=r?.sessions?.[si];
+                  const km=sessTotalKm(sess||{});
+                  return h("div",{key:si,style:{marginBottom:si<sessions.length-1?12:0}},
+                    sessions.length>1&&h("div",{style:{fontSize:10,color:"#8A9BB0",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}},"Session "+(si+1)+(km>0?" · Total KMs: "+km.toFixed(1)+" km":"")),
+                    parts.map((part,pi)=>{
+                      const wt=WT[part.type]||WT.easy;
+                      return h("div",{key:pi,style:{marginBottom:pi<parts.length-1?6:0,paddingLeft:parts.length>1?8:0,borderLeft:parts.length>1?`2px solid ${wt.color}44`:"none"}},
+                        parts.length>1&&h("div",{style:{fontSize:9,color:"#8A9BB0",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}},"Part "+(pi+1)),
+                        h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:part.notes?3:0}},
+                          h("span",{className:"wtb",style:{background:wt.bg,color:wt.dark,border:`0.5px solid ${wt.color}44`,fontSize:11}},wt.label),
+                          part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
+                          part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"#8A9BB0"}},"@ "+part.pace+"/km")
+                        ),
+                        part.notes&&h("div",{style:{fontSize:11,color:"#4A5568"}},part.notes)
+                      );
+                    }),
+                    sessions.length===1&&km>0&&h("div",{style:{fontSize:11,color:"#8A9BB0",marginTop:4}},"Total KMs: ",h("strong",{className:"mono"},km.toFixed(1)+" km")),
+                    isCoach&&rep&&h("div",{style:{marginTop:6,paddingTop:6,borderTop:"0.5px solid #F0F3F7"}},
+                      h("div",{style:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:4}},
+                        h("span",{style:{fontWeight:700,fontSize:12,color:SS[rep.status]?.color}},SS[rep.status]?.label),
+                        rep.wu&&h("span",{style:{fontSize:12,color:"#8A9BB0"}},"WU: "+rep.wu+"km"),
+                        h("span",{className:"mono",style:{fontSize:12,color:"#4A5568"}},"Main: "+rep.actualDistance+"km"),
+                        rep.cd&&h("span",{style:{fontSize:12,color:"#8A9BB0"}},"CD: "+rep.cd+"km"),
+                        rep.totalKm&&h("span",{style:{fontSize:12,fontWeight:700,color:"#0F1117"}},"Total: "+rep.totalKm+"km"),
+                        rep.hr&&h("span",{style:{fontSize:12,color:"#4A5568"}},"HR "+rep.hr+"bpm"),
+                        rep.effort&&h("span",{style:{fontSize:12,color:"#4A5568"}},"Effort "+rep.effort+"/10")
+                      ),
+                      repSummary(rep, sess.parts)?.map((line,li)=>
+                        h("div",{key:li,style:{fontSize:12,color:"#4A5568",marginBottom:2}},
+                          line.label&&h("span",{style:{fontWeight:600,color:line.color,marginRight:6}},line.label+":"),
+                          line.dist>0&&h("span",{className:"mono",style:{marginRight:6}},line.dist+"km"),
+                          line.detail&&h("span",null,line.detail)
+                        )
+                      ),
+                      rep.notes&&h("div",{style:{fontSize:12,color:"#8A9BB0",fontStyle:"italic",marginTop:2}},'"'+rep.notes+'"')
+                    ),
+                    si===0&&r?.sleep&&h("div",{style:{display:"flex",gap:12,marginTop:4,fontSize:12,color:"#8A9BB0"}},
+                      h("span",null,"😴 Sleep: ",h("strong",{style:{color:"#0F1117"}},r.sleep+"/5")),
+                      h("span",null,"🧠 Stress: ",h("strong",{style:{color:"#0F1117"}},r.stress+"/5"))
+                    ),
+                    si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed #E2E8F0",margin:"10px 0"}})
+                  );
+                })
+              )
+        ),
+        h("div",{style:{display:"flex",alignItems:"center",gap:6,flexShrink:0}},
+          !isRest&&r?.sessions&&h("span",{className:"stb",style:{background:"#E8F8F0",color:"#1A7A43"}},"Reported"),
+          !isCoach&&!isRest&&h("button",{className:"btn btns",onClick:()=>setRepDay(day)},r?"Edit":"Report")
+        )
+      )
+    );
+    } catch(e) {
+      console.error("Error rendering day",day,e);
+      return h("div",{key:day,style:{padding:"8px 14px",marginBottom:8,fontSize:12,color:"#8A9BB0"}},day+": —");
+    }
+  };
+
+  return h(Fragment,null,
+    DAYS.map(day=>renderSessions(day)),
+    repDay&&h(Modal,{title:"Report — "+repDay,onClose:()=>setRepDay(null),wide:true},
+      h(ReportForm,{day:repDay,daySessions:plan[repDay]?.sessions||[],existingReport:reports[repDay],onCancel:()=>setRepDay(null),onSave:r=>{onReport(repDay,r);setRepDay(null);}})
+    )
+  );
+};
+
+// ── Athlete Detail (coach view) ───────────────────────────────────────────────
+const printWeeklySummary = (athlete, plan, reports, weekOff) => {
+  const wl = weekLabel(weekOff);
+  const totalPlanned = DAYS.reduce((s,d)=>s+dayTotalKm(plan[d]),0);
+  const totalActual = DAYS.reduce((s,day)=>{
+    const r=reports[day]; if(!r?.sessions) return s;
+    return s+r.sessions.reduce((ss,rep)=>ss+(parseFloat(rep.actualDistance)||0),0);
+  },0);
+  const workoutDays = DAYS.filter(d=>!dayIsRest(plan[d]));
+  const doneDays = workoutDays.filter(d=>reports[d]?.sessions?.some(s=>s.status==="done"||s.status==="modified"));
+  const allEfforts = DAYS.flatMap(d=>(reports[d]?.sessions||[]).map(s=>parseFloat(s.effort)||0)).filter(Boolean);
+  const avgEffort = allEfforts.length ? (allEfforts.reduce((a,b)=>a+b,0)/allEfforts.length).toFixed(1) : "–";
+  const sleepVals = DAYS.map(d=>parseFloat(reports[d]?.sleep)||0).filter(Boolean);
+  const stressVals = DAYS.map(d=>parseFloat(reports[d]?.stress)||0).filter(Boolean);
+  const avgSleep = sleepVals.length ? (sleepVals.reduce((a,b)=>a+b,0)/sleepVals.length).toFixed(1) : "–";
+  const avgStress = stressVals.length ? (stressVals.reduce((a,b)=>a+b,0)/stressVals.length).toFixed(1) : "–";
+
+  const dayRows = DAYS.map(day=>{
+    const d=plan[day]; const r=reports[day];
+    if(dayIsRest(d)) return `<tr><td><b>${day}</b></td><td colspan="6" style="color:#8A9BB0">Rest / Off</td></tr>`;
+    const sessions=(d?.sessions||[]);
+    const plannedKm = dayTotalKm(d).toFixed(1);
+    const actualKm = r?.sessions ? r.sessions.reduce((s,rep)=>s+(parseFloat(rep.actualDistance)||0),0).toFixed(1) : "–";
+    const status = r?.sessions ? (r.sessions[0]?.status||"–") : "No report";
+    const effort = r?.sessions ? (r.sessions[0]?.effort||"–") : "–";
+    const notes = r?.sessions ? (r.sessions[0]?.notes||"") : "";
+    const sleep = r?.sleep ? r.sleep+"/5" : "–";
+    const stress = r?.stress ? r.stress+"/5" : "–";
+    const types = sessions.map(s=>(s.parts||[]).map(p=>WT[p.type]?.label||p.type).join(" + ")).join(" / ");
+    return `<tr>
+      <td><b>${day}</b></td>
+      <td>${types}</td>
+      <td style="font-family:monospace">${plannedKm} km</td>
+      <td style="font-family:monospace">${actualKm} km</td>
+      <td>${status}</td>
+      <td>${effort}/10</td>
+      <td>😴${sleep} 🧠${stress}</td>
+    </tr>${notes?`<tr><td></td><td colspan="6" style="color:#4A5568;font-style:italic;font-size:12px">"${notes}"</td></tr>`:""}`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Weekly Summary — ${athlete.name}</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 800px; margin: 40px auto; color: #0F1117; font-size: 14px; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .subtitle { color: #8A9BB0; font-size: 13px; margin-bottom: 24px; }
+    .summary-boxes { display: flex; gap: 16px; margin-bottom: 24px; }
+    .box { background: #F7F8FA; border-radius: 8px; padding: 12px 16px; flex: 1; }
+    .box-label { font-size: 11px; color: #8A9BB0; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .box-value { font-size: 20px; font-weight: 700; font-family: monospace; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background: #F7F8FA; text-align: left; padding: 8px 10px; font-size: 11px; color: #8A9BB0; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #E2E8F0; }
+    td { padding: 8px 10px; border-bottom: 0.5px solid #F0F3F7; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    .footer { margin-top: 32px; color: #8A9BB0; font-size: 11px; border-top: 0.5px solid #E2E8F0; padding-top: 12px; }
+    @media print { body { margin: 20px; } }
+  </style></head><body>
+  <div style="color:#F5A623;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">AMIT 1 — Running Coach</div>
+  <h1>${athlete.name} — Weekly Summary</h1>
+  <div class="subtitle">${wl} · ${athlete.events||""} · 5K PB: ${athlete.pb5k||"–"}</div>
+  <div class="summary-boxes">
+    <div class="box"><div class="box-label">Planned volume</div><div class="box-value">${totalPlanned.toFixed(0)} km</div></div>
+    <div class="box"><div class="box-label">Actual volume</div><div class="box-value">${totalActual.toFixed(0)} km</div></div>
+    <div class="box"><div class="box-label">Days done</div><div class="box-value">${doneDays.length} / ${workoutDays.length}</div></div>
+    <div class="box"><div class="box-label">Avg effort</div><div class="box-value">${avgEffort}/10</div></div>
+    <div class="box"><div class="box-label">Avg sleep</div><div class="box-value">${avgSleep}/5</div></div>
+    <div class="box"><div class="box-label">Avg stress</div><div class="box-value">${avgStress}/5</div></div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Day</th><th>Session</th><th>Planned</th><th>Actual</th><th>Status</th><th>Effort</th><th>Wellbeing</th>
+    </tr></thead>
+    <tbody>${dayRows}</tbody>
+  </table>
+  <div class="footer">Generated by Amit 1 Running Coach · ${new Date().toLocaleDateString()}</div>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+
+  const win = window.open("","_blank");
+  win.document.write(html);
+  win.document.close();
+};
+
+const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
+  const [tab,setTab]=useState("plan");
+  const [weekOff,setWeekOff]=useState(0);
+  const [editPlan,setEditPlan]=useState(false);
+  const [editAth,setEditAth]=useState(false);
+  const [plan,setPlan]=useState({});
+  const [reports,setReports]=useState({});
+  const [groupPlan,setGroupPlan]=useState({});
+  const [loading,setLoading]=useState(true);
+  const [toast,setToast]=useState(null);
+  const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
+  const today=todayShort();
+
+  useEffect(()=>{
+    setLoading(true);
+    const wk=weekKey(weekOff);
+    const loadAll=async()=>{
+      const [p,r]=await Promise.all([
+        dbGetPlan(athlete.id, weekOff),
+        dbGet(`reports/${athlete.id}/weeks/${wk}`)
+      ]);
+      // load group plan as fallback
+      let gp={};
+      if(athlete.groupId){
+        const gpRaw=await dbGet(`groupPlans/${athlete.groupId}/weeks/${wk}`);
+        if(gpRaw) gp=migratePlan(gpRaw);
+      }
+      setGroupPlan(gp);
+      const finalPlan=p?migratePlan(p):gp;
+      setPlan(finalPlan);
+      setReports(r||{});
+      setLoading(false);
+    };
+    loadAll();
+  },[athlete.id,weekOff,athlete.groupId]);
+
+  const savePlan=async(newPlan)=>{
+    const wk=weekKey(weekOff);
+    await dbSet(`plans/${athlete.id}/weeks/${wk}`,newPlan);
+    setPlan(newPlan);
+    setEditPlan(false);
+    showToast("Plan saved");
+  };
+  const saveReport=async(day,rep)=>{
+    const wk=weekKey(weekOff);
+    const existing=reports||{};
+    const newReps={...existing,[day]:rep};
+    await dbSet(`reports/${athlete.id}/weeks/${wk}`,newReps);
+    setReports(newReps);
+    showToast("Report saved");
+  };
+  const updateAthlete=async(f)=>{
+    await dbSet(`athletes/${athlete.id}`,{name:f.name,level:f.level,age:f.age,pb5k:f.pb5k,pb10k:f.pb10k,pbHalf:f.pbHalf,pbMarathon:f.pbMarathon,events:f.events,notes:f.notes,groupId:f.groupId||""});
+    onUpdate({...athlete,...f});
+    setEditAth(false);
+    showToast("Profile updated");
+  };
+
+  const lvl=LVL[athlete.level]||LVL.recreational;
+  const wDays=DAYS.filter(d=>!dayIsRest(plan[d]));
+  const dDays=wDays.filter(d=>reports[d]?.sessions?.some(s=>s.status==="done"||s.status==="modified"));
+  const comp=wDays.length?Math.round(dDays.length/wDays.length*100):null;
+  const totalKm=DAYS.reduce((s,d)=>s+dayTotalKm(plan[d]),0);
+  const actualKm=DAYS.reduce((s,day)=>{
+    const r=reports[day]; if(!r?.sessions) return s;
+    return s+r.sessions.reduce((ss,rep)=>ss+(parseFloat(rep.actualDistance)||0),0);
+  },0);
+  const cc=ccColor(comp);
+  const pbLine=[athlete.age&&`Age ${athlete.age}`,athlete.events,athlete.pb5k&&`5K ${athlete.pb5k}`,athlete.pb10k&&`10K ${athlete.pb10k}`,athlete.pbHalf&&`Half ${athlete.pbHalf}`,athlete.pbMarathon&&`Marathon ${athlete.pbMarathon}`].filter(Boolean).join(" · ");
+  const group=groups.find(g=>g.id===athlete.groupId);
+
+  return h("div",{style:{maxWidth:760,margin:"0 auto",padding:"1.5rem 1rem"}},
+    toast&&h(Toast,{msg:toast.msg,ok:toast.ok}),
+    h("div",{style:{display:"flex",alignItems:"flex-start",gap:14,marginBottom:"1.5rem"}},
+      h("button",{className:"btn",onClick:onBack,style:{marginTop:2,flexShrink:0}},"← Back"),
+      h(Avatar,{name:athlete.name,level:athlete.level,size:50}),
+      h("div",{style:{flex:1}},
+        h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:4,flexWrap:"wrap"}},
+          h("span",{style:{fontSize:22,fontWeight:700}},athlete.name),
+          h("span",{style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:lvl.bg,color:lvl.color,border:`0.5px solid ${lvl.border}`,letterSpacing:"0.06em",textTransform:"uppercase"}},lvl.label),
+          group&&h("span",{style:{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"#FEF3E0",color:"#9A6610",border:"0.5px solid #F5A62344"}},"📋 "+group.name)
+        ),
+        h("div",{style:{fontSize:13,color:"#8A9BB0",lineHeight:1.6}},pbLine),
+        athlete.notes&&h("div",{style:{fontSize:12,color:"#F5A623",marginTop:3}},"⚠ "+athlete.notes)
+      ),
+      h("button",{className:"btn btns",onClick:()=>setEditAth(true),style:{flexShrink:0}},"Edit profile")
+    ),
+    h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
+      h(StatCard,{label:"Weekly volume",value:totalKm?Math.round(totalKm)+" km":"–"}),
+      h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"#1A7A43":undefined}),
+      h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
+    ),
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"0.5px solid #E2E8F0",marginBottom:14}},
+      h("div",{style:{display:"flex"}},
+        h("button",{className:"tabb"+(tab==="plan"?" act":""),onClick:()=>setTab("plan")},"Training plan"),
+        h("button",{className:"tabb"+(tab==="reports"?" act":""),onClick:()=>setTab("reports")},"Reports")
+      ),
+      h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        tab==="plan"&&h("button",{className:"btnp btns",onClick:()=>setEditPlan(true)},"Edit plan"),
+        h("button",{className:"btn btns",onClick:()=>printWeeklySummary(athlete,plan,reports,weekOff)},"📄 Summary"),
+        h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w-1)},"‹"),
+        h("span",{style:{fontSize:12,color:"#4A5568",minWidth:100,textAlign:"center",fontWeight:500}},weekLabel(weekOff)),
+        h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w+1)},"›")
+      )
+    ),
+    loading?h(Spinner):null,
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport}),
+    !loading&&tab==="reports"&&h("div",null,
+      DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
+        const d=plan[day],r=reports[day],sessions=d?.sessions||[];
+        return h("div",{key:day,style:{border:"0.5px solid #E2E8F0",borderRadius:10,padding:"12px 14px",marginBottom:8,background:r?"#fff":"#FAFBFC"}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:r?12:0}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+              h("span",{style:{fontSize:10,fontWeight:700,color:"#8A9BB0",textTransform:"uppercase",letterSpacing:"0.06em"}},day),
+              sessions.map((sess,si)=>{const wt=WT[sessFirstType(sess)]||WT.easy;return h("span",{key:si,className:"wtb",style:{background:wt.bg,color:wt.dark,fontSize:11}},wt.label+(sessions.length>1?" ("+(si+1)+")":""));})
+            ),
+            !r&&h("span",{style:{fontSize:12,color:"#CBD5E0"}},"No report")
+          ),
+          r?.sessions&&sessions.map((sess,si)=>{
+            const rep=r.sessions[si];if(!rep)return null;
+            const wt=WT[sessFirstType(sess)]||WT.easy;
+            const km=sessTotalKm(sess);
+            return h("div",{key:si,style:{marginBottom:si<sessions.length-1?12:0}},
+              sessions.length>1&&h("div",{style:{fontSize:11,fontWeight:700,color:wt.dark,marginBottom:6}},"Session "+(si+1)+": "+wt.label),
+              h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
+                h("span",{className:"stb",style:{background:SS[rep.status]?.bg,color:SS[rep.status]?.color}},SS[rep.status]?.label),
+                km>0&&h("span",{className:"mono",style:{fontSize:12,color:"#8A9BB0"}},"Planned: "+km.toFixed(1)+"km")
+              ),
+              h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:8}},
+                rep.actualDistance&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"DISTANCE"),h("strong",{className:"mono"},rep.actualDistance+" km")),
+                rep.actualPace&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"PACE"),h("strong",{className:"mono"},rep.actualPace+"/km")),
+                rep.hr&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"AVG HR"),h("strong",{className:"mono"},rep.hr+" bpm")),
+                rep.effort&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
+                si===0&&r.sleep&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
+                si===0&&r.stress&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"🧠 STRESS"),h("strong",null,r.stress+"/5")),
+                rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"#4A5568",fontSize:13}},'"'+rep.notes+'"'))
+              ),
+              si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed #E2E8F0",marginTop:12}})
+            );
+          })
+        );
+      }),
+      !DAYS.some(d=>!dayIsRest(plan[d]))&&h("div",{style:{textAlign:"center",padding:"3rem",color:"#8A9BB0",fontSize:14}},"No workouts planned this week.")
+    ),
+    editPlan&&h(Modal,{title:"Edit plan — "+weekLabel(weekOff),onClose:()=>setEditPlan(false),wide:true},
+      h(PlanEditor,{plan,onCancel:()=>setEditPlan(false),onSave:savePlan})
+    ),
+    editAth&&h(Modal,{title:"Edit athlete profile",onClose:()=>setEditAth(false),wide:true},
+      h(AthleteForm,{initial:athlete,groups,onCancel:()=>setEditAth(false),onSave:updateAthlete})
+    )
+  );
+};
+
+// ── Athlete Self-View (athlete login) ─────────────────────────────────────────
+const AthleteHome = ({user,onSignOut}) => {
+  const [profile,setProfile]=useState(null);
+  const [plan,setPlan]=useState({});
+  const [reports,setReports]=useState({});
+  const [weekOff,setWeekOff]=useState(0);
+  const [tab,setTab]=useState("plan");
+  const [loading,setLoading]=useState(true);
+  const [toast,setToast]=useState(null);
+  const [showCalendar,setShowCalendar]=useState(false);
+  const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
+  const today=todayShort();
+
+  useEffect(()=>{
+    dbGet(`athletes/${user.uid}`).then(p=>{setProfile(p);});
+  },[user.uid]);
+
+  useEffect(()=>{
+    if(!profile)return;
+    setLoading(true);
+    const wk=weekKey(weekOff);
+    const load=async()=>{
+      const [p,r]=await Promise.all([
+        dbGetPlan(user.uid, weekOff),
+        dbGet(`reports/${user.uid}/weeks/${wk}`)
+      ]);
+      let finalPlan=p?migratePlan(p):{};
+      if(!p&&profile.groupId){
+        const gp=await dbGet(`groupPlans/${profile.groupId}/weeks/${wk}`);
+        if(gp)finalPlan=migratePlan(gp);
+      }
+      setPlan(finalPlan);
+      setReports(r||{});
+      setLoading(false);
+    };
+    load();
+  },[user.uid,weekOff,profile]);
+
+  const saveReport=async(day,rep)=>{
+    const wk=weekKey(weekOff);
+    const newReps={...reports,[day]:rep};
+    await dbSet(`reports/${user.uid}/weeks/${wk}`,newReps);
+    setReports(newReps);
+    showToast("Report submitted ✓");
+  };
+
+  if(!profile)return h(Spinner);
+  if(showCalendar)return h(SeasonCalendar,{onClose:()=>setShowCalendar(false),isCoach:false});
+  const lvl=LVL[profile.level]||LVL.recreational;
+  const wDays=DAYS.filter(d=>!dayIsRest(plan[d]));
+  const dDays=wDays.filter(d=>reports[d]?.sessions?.some(s=>s.status==="done"||s.status==="modified"));
+  const comp=wDays.length?Math.round(dDays.length/wDays.length*100):null;
+  const cc=ccColor(comp);
+  const actualKm=DAYS.reduce((s,day)=>{
+    const r=reports[day]; if(!r?.sessions) return s;
+    return s+r.sessions.reduce((ss,rep)=>ss+(parseFloat(rep.actualDistance)||0),0);
+  },0);
+
+  return h("div",{style:{maxWidth:680,margin:"0 auto",padding:"1.5rem 1rem"}},
+    toast&&h(Toast,{msg:toast.msg,ok:toast.ok}),
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1.5rem"}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:12}},
+        h(Avatar,{name:profile.name,level:profile.level,size:44}),
+        h("div",null,
+          h("div",{style:{fontSize:10,fontWeight:700,color:"#F5A623",letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:2}},"Amit 1"),
+          h("div",{style:{fontSize:20,fontWeight:700}},profile.name),
+          h("span",{style:{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:lvl.bg,color:lvl.color,border:`0.5px solid ${lvl.border}`,letterSpacing:"0.06em",textTransform:"uppercase"}},lvl.label)
+        )
+      ),
+      h("div",{style:{display:"flex",gap:8}},
+        h("button",{className:"btn btns",onClick:()=>setShowCalendar(true)},"📅 Season"),
+        h("button",{className:"btn btns",onClick:onSignOut},"Sign out")
+      )
+    ),
+    h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
+      h(StatCard,{label:"This week",value:weekLabel(weekOff)}),
+      h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"#1A7A43":undefined}),
+      h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
+    ),
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"0.5px solid #E2E8F0",marginBottom:14}},
+      h("div",{style:{display:"flex"}},
+        h("button",{className:"tabb"+(tab==="plan"?" act":""),onClick:()=>setTab("plan")},"My plan"),
+        h("button",{className:"tabb"+(tab==="reports"?" act":""),onClick:()=>setTab("reports")},"My reports")
+      ),
+      h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w-1)},"‹"),
+        h("span",{style:{fontSize:12,color:"#4A5568",minWidth:100,textAlign:"center",fontWeight:500}},weekLabel(weekOff)),
+        h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w+1)},"›")
+      )
+    ),
+    loading?h(Spinner):null,
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport}),
+    !loading&&tab==="reports"&&h("div",null,
+      DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
+        const d=plan[day],r=reports[day],sessions=d?.sessions||[];
+        return h("div",{key:day,style:{border:"0.5px solid #E2E8F0",borderRadius:10,padding:"12px 14px",marginBottom:8,background:r?"#fff":"#FAFBFC"}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:r?8:0}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+              h("span",{style:{fontSize:10,fontWeight:700,color:"#8A9BB0",textTransform:"uppercase",letterSpacing:"0.06em"}},day),
+              sessions.map((sess,si)=>{const wt=WT[sessFirstType(sess)]||WT.easy;return h("span",{key:si,className:"wtb",style:{background:wt.bg,color:wt.dark,fontSize:11}},wt.label);})
+            ),
+            r?h("span",{className:"stb",style:{background:"#E8F8F0",color:"#1A7A43"}},"✓ Reported"):h("span",{style:{fontSize:12,color:"#CBD5E0"}},"No report yet")
+          ),
+          r?.sessions&&r.sessions.map((rep,si)=>{
+            if(!rep)return null;
+            return h("div",{key:si,style:{marginTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}},
+              rep.actualDistance&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"DISTANCE"),h("strong",{className:"mono"},rep.actualDistance+" km")),
+              rep.actualPace&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"PACE"),h("strong",{className:"mono"},rep.actualPace+"/km")),
+              rep.hr&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"HR"),h("strong",{className:"mono"},rep.hr+" bpm")),
+              rep.effort&&h("div",null,h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
+              rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"#8A9BB0",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"#4A5568",fontSize:13}},'"'+rep.notes+'"'))
+            );
+          })
+        );
+      }),
+      !DAYS.some(d=>!dayIsRest(plan[d]))&&h("div",{style:{textAlign:"center",padding:"3rem",color:"#8A9BB0",fontSize:14}},"No workouts planned for this week yet.")
+    )
+  );
+};
+
+// ── Groups Manager ────────────────────────────────────────────────────────────
+const GroupsManager = ({groups,athletes,onAddGroup,onDeleteGroup,onSaveGroupPlan,onClose}) => {
+  const [newName,setNewName]=useState("");
+  const [editingGroup,setEditingGroup]=useState(null);
+  const [groupPlan,setGroupPlan]=useState({});
+  const [weekOff,setWeekOff]=useState(0);
+  const [loading,setLoading]=useState(false);
+
+  const loadGroupPlan=async(gid)=>{
+    setLoading(true);
+    const wk=weekKey(weekOff);
+    const p=await dbGet(`groupPlans/${gid}/weeks/${wk}`);
+    setGroupPlan(p?migratePlan(p):{});
+    setLoading(false);
+  };
+
+  useEffect(()=>{if(editingGroup)loadGroupPlan(editingGroup.id);},[editingGroup,weekOff]);
+
+  const saveGroupPlan=async(plan)=>{
+    const wk=weekKey(weekOff);
+    await dbSet(`groupPlans/${editingGroup.id}/weeks/${wk}`,plan);
+    onSaveGroupPlan(editingGroup.id,wk,plan);
+    setEditingGroup(null);
+  };
+
+  if(editingGroup)return h(Modal,{title:`Group plan — ${editingGroup.name} — ${weekLabel(weekOff)}`,onClose:()=>setEditingGroup(null),wide:true},
+    h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:12}},
+      h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w-1)},"‹"),
+      h("span",{style:{fontSize:13,fontWeight:500,color:"#4A5568"}},weekLabel(weekOff)),
+      h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w+1)},"›")
+    ),
+    loading?h(Spinner):h(PlanEditor,{plan:groupPlan,groupName:editingGroup.name,onCancel:()=>setEditingGroup(null),onSave:saveGroupPlan})
+  );
+
+  return h(Modal,{title:"Groups",onClose:onClose,wide:true},
+    h("div",{style:{marginBottom:20}},
+      h("div",{style:{fontSize:13,color:"#4A5568",marginBottom:10}},"Groups let you write one plan that all members inherit automatically."),
+      h("div",{style:{display:"flex",gap:8,marginBottom:16}},
+        h("input",{value:newName,onChange:e=>setNewName(e.target.value),placeholder:"New group name…",style:{flex:1}}),
+        h("button",{className:"btnp",onClick:()=>{if(newName.trim()){onAddGroup(newName.trim());setNewName("");}}},"+ Add group")
+      ),
+      groups.length===0&&h("div",{style:{textAlign:"center",padding:"2rem",color:"#8A9BB0",fontSize:14}},"No groups yet. Create one above."),
+      groups.map(g=>{
+        const members=athletes.filter(a=>a.groupId===g.id);
+        return h("div",{key:g.id,style:{border:"0.5px solid #E2E8F0",borderRadius:10,padding:"12px 14px",marginBottom:8}},
+          h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:members.length?8:0}},
+            h("div",null,
+              h("div",{style:{fontWeight:600,fontSize:15}},g.name),
+              h("div",{style:{fontSize:12,color:"#8A9BB0"}},members.length+" member"+(members.length!==1?"s":""))
+            ),
+            h("div",{style:{display:"flex",gap:6}},
+              h("button",{className:"btnp btns",onClick:()=>setEditingGroup(g)},"Edit group plan"),
+              h("button",{className:"btnd",onClick:()=>onDeleteGroup(g.id)},"Delete")
+            )
+          ),
+          members.length>0&&h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+            members.map(a=>h("span",{key:a.id,style:{fontSize:12,padding:"2px 8px",borderRadius:4,background:"#F7F8FA",border:"0.5px solid #E2E8F0"}},a.name))
+          )
+        );
+      })
+    )
+  );
+};
+
+// ── Season Calendar ───────────────────────────────────────────────────────────
+const EVENT_TYPES = {
+  race:      { label:"Race",           color:"#E05C5C", bg:"#FCEAEA", emoji:"🏁" },
+  optional:  { label:"Optional race",  color:"#F5A623", bg:"#FEF3E0", emoji:"🏃" },
+  trial:     { label:"Time trial",     color:"#3B9EFF", bg:"#E6F3FF", emoji:"⏱" },
+  camp:      { label:"Training camp",  color:"#A78BFA", bg:"#F0EBFF", emoji:"🏕" },
+  rest:      { label:"Rest week",      color:"#8A9BB0", bg:"#F0F3F7", emoji:"😴" },
+  other:     { label:"Other",          color:"#06B6D4", bg:"#E0F7FA", emoji:"📌" },
+};
+
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+const SeasonCalendar = ({onClose, isCoach}) => {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [addingEvent, setAddingEvent] = useState(null);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [form, setForm] = useState({name:"", type:"race", dateStart:"", dateEnd:"", location:"", mandatory:true, notes:""});
+  const [toast, setToast] = useState(null);
+  const showToast = useCallback((msg,ok=true)=>{ setToast({msg,ok}); setTimeout(()=>setToast(null),2000); },[]);
+
+  useEffect(()=>{
+    dbList("seasonEvents").then(evs=>{ setEvents(evs); setLoading(false); });
+  },[]);
+
+  const saveEvent = async () => {
+    if (!form.name.trim() || !form.dateStart) return;
+    const id = editingEvent?.id || "ev"+Date.now();
+    const dateEnd = form.dateEnd && form.dateEnd >= form.dateStart ? form.dateEnd : form.dateStart;
+    const ev = { id, ...form, dateEnd };
+    await dbSet(`seasonEvents/${id}`, ev);
+    setEvents(prev => editingEvent ? prev.map(e=>e.id===id?ev:e) : [...prev, ev]);
+    setAddingEvent(null); setEditingEvent(null);
+    setForm({name:"", type:"race", dateStart:"", dateEnd:"", location:"", mandatory:true, notes:""});
+    showToast("Event saved");
+  };
+
+  const deleteEvent = async (id) => {
+    if (!window.confirm("Delete this event?")) return;
+    await dbDel(`seasonEvents/${id}`);
+    setEvents(prev => prev.filter(e=>e.id!==id));
+    showToast("Event deleted");
+  };
+
+  const openAdd = (dateStr) => {
+    if (!isCoach) return;
+    setForm({name:"", type:"race", dateStart:dateStr, dateEnd:dateStr, location:"", mandatory:true, notes:""});
+    setEditingEvent(null);
+    setAddingEvent(dateStr);
+  };
+
+  const openEdit = (ev) => {
+    if (!isCoach) return;
+    setForm({name:ev.name, type:ev.type, dateStart:ev.dateStart||ev.date||"", dateEnd:ev.dateEnd||ev.dateStart||ev.date||"", location:ev.location||"", mandatory:ev.mandatory!==false, notes:ev.notes||""});
+    setEditingEvent(ev);
+    setAddingEvent(ev.dateStart||ev.date);
+  };
+
+  // Check if an event spans a given date
+  const eventsOnDate = (dateStr) => events.filter(ev => {
+    const start = ev.dateStart||ev.date||"";
+    const end = ev.dateEnd||start;
+    return dateStr >= start && dateStr <= end;
+  });
+
+  const isEventStart = (ev, dateStr) => (ev.dateStart||ev.date) === dateStr;
+  const isEventEnd   = (ev, dateStr) => (ev.dateEnd||ev.dateStart||ev.date) === dateStr;
+  const isMultiDay   = (ev) => (ev.dateEnd||ev.dateStart||ev.date) !== (ev.dateStart||ev.date);
+
+  const now = new Date();
+  const months = [];
+  for (let mi = 0; mi < 6; mi++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + mi, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth() });
+  }
+
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+
+  const renderMonth = ({year, month}) => {
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month+1, 0).getDate();
+    const cells = [];
+    for (let i=0; i<firstDay; i++) cells.push(h("div",{key:"e"+i}));
+    for (let day=1; day<=daysInMonth; day++) {
+      const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+      const dayEvents = eventsOnDate(dateStr);
+      const isToday = dateStr === todayStr;
+      cells.push(
+        h("div",{key:day,
+          onClick:()=>openAdd(dateStr),
+          style:{ minHeight:56, padding:"4px 5px", borderRadius:6, cursor:isCoach?"pointer":"default",
+            background:isToday?"#FEF3E0":"#fff",
+            border:isToday?"1.5px solid #F5A623":"0.5px solid #F0F3F7" }},
+          h("div",{style:{fontSize:11, fontWeight:isToday?700:400, color:isToday?"#F5A623":"#8A9BB0", marginBottom:2}},day),
+          dayEvents.map(ev=>{
+            const et=EVENT_TYPES[ev.type]||EVENT_TYPES.other;
+            const multi=isMultiDay(ev);
+            const isStart=isEventStart(ev,dateStr);
+            const isEnd=isEventEnd(ev,dateStr);
+            const borderRadius = !multi?"3px":isStart?"3px 0 0 3px":isEnd?"0 3px 3px 0":"0";
+            return h("div",{key:ev.id,
+              onClick:e=>{ e.stopPropagation(); openEdit(ev); },
+              style:{ fontSize:9, fontWeight:600, padding:"2px 4px", marginBottom:2,
+                background:et.bg, color:et.color, cursor:isCoach?"pointer":"default",
+                borderTop:`1px solid ${et.color}66`, borderBottom:`1px solid ${et.color}66`,
+                borderLeft:isStart||!multi?`2px solid ${et.color}`:"none",
+                borderRight:isEnd||!multi?`1px solid ${et.color}44`:"none",
+                borderRadius, lineHeight:1.3,
+                whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"
+              }},
+              isStart ? et.emoji+" "+ev.name+(ev.mandatory===false?" (opt)":"") : ""
+            );
+          })
+        )
+      );
+    }
+    return h("div",{key:`${year}-${month}`, style:{marginBottom:28}},
+      h("div",{style:{fontSize:15, fontWeight:700, color:"#0F1117", marginBottom:10, paddingBottom:6, borderBottom:"0.5px solid #E2E8F0"}},
+        MONTH_NAMES[month]+" "+year),
+      h("div",{style:{display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:3, marginBottom:4}},
+        DAYS.map(d=>h("div",{key:d,style:{fontSize:9,fontWeight:700,color:"#8A9BB0",textAlign:"center",textTransform:"uppercase",letterSpacing:"0.06em"}},d))
+      ),
+      h("div",{style:{display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:3}}, cells)
+    );
+  };
+
+  return h("div",{style:{maxWidth:760, margin:"0 auto", padding:"1.5rem 1rem"}},
+    toast&&h(Toast,{msg:toast.msg,ok:toast.ok}),
+    h("div",{style:{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"1.5rem"}},
+      h("div",null,
+        h("div",{style:{fontSize:10,fontWeight:700,color:"#F5A623",letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:4}},"Amit 1"),
+        h("h2",{style:{fontSize:22,fontWeight:700,margin:0}},"Season Calendar"),
+        h("div",{style:{fontSize:13,color:"#8A9BB0",marginTop:2}},isCoach?"Click any day to add an event":"Team race & event schedule")
+      ),
+      h("button",{className:"btn",onClick:onClose},"← Back")
+    ),
+    h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}},
+      Object.entries(EVENT_TYPES).map(([k,v])=>
+        h("span",{key:k,style:{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:4,background:v.bg,color:v.color,border:`0.5px solid ${v.color}44`}},
+          v.emoji+" "+v.label)
+      )
+    ),
+    loading ? h(Spinner) : months.map(renderMonth),
+    addingEvent&&h("div",{className:"mo",onClick:e=>{if(e.target===e.currentTarget){setAddingEvent(null);setEditingEvent(null);}}},
+      h("div",{className:"mb",style:{maxWidth:440}},
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
+          h("div",{style:{fontSize:17,fontWeight:700}},(editingEvent?"Edit":"Add")+" event"),
+          h("button",{onClick:()=>{setAddingEvent(null);setEditingEvent(null);},style:{border:"none",background:"none",fontSize:24,cursor:"pointer",color:"#8A9BB0",lineHeight:1}},"×")
+        ),
+        h("div",{style:{marginBottom:12}},
+          h("label",{className:"lbl"},"Event name"),
+          h("input",{value:form.name,onChange:e=>setForm(f=>({...f,name:e.target.value})),placeholder:"e.g. Training Camp Tiberias"})
+        ),
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+          h("div",null,
+            h("label",{className:"lbl"},"Start date"),
+            h("input",{type:"date",value:form.dateStart,onChange:e=>setForm(f=>({...f,dateStart:e.target.value}))})
+          ),
+          h("div",null,
+            h("label",{className:"lbl"},"End date"),
+            h("input",{type:"date",value:form.dateEnd,onChange:e=>setForm(f=>({...f,dateEnd:e.target.value})),min:form.dateStart})
+          ),
+          h("div",null,
+            h("label",{className:"lbl"},"Type"),
+            h("select",{value:form.type,onChange:e=>setForm(f=>({...f,type:e.target.value}))},
+              Object.entries(EVENT_TYPES).map(([k,v])=>h("option",{key:k,value:k},v.emoji+" "+v.label))
+            )
+          ),
+          h("div",null,
+            h("label",{className:"lbl"},"Participation"),
+            h("select",{value:form.mandatory?"mandatory":"optional",onChange:e=>setForm(f=>({...f,mandatory:e.target.value==="mandatory"}))},
+              h("option",{value:"mandatory"},"Mandatory"),
+              h("option",{value:"optional"},"Optional")
+            )
+          )
+        ),
+        h("div",{style:{marginBottom:12}},
+          h("label",{className:"lbl"},"Location"),
+          h("input",{value:form.location,onChange:e=>setForm(f=>({...f,location:e.target.value})),placeholder:"e.g. Tiberias"})
+        ),
+        h("div",{style:{marginBottom:20}},
+          h("label",{className:"lbl"},"Notes"),
+          h("textarea",{value:form.notes,onChange:e=>setForm(f=>({...f,notes:e.target.value})),rows:2,placeholder:"Any additional info…"})
+        ),
+        h("div",{style:{display:"flex",gap:8,justifyContent:"space-between"}},
+          editingEvent
+            ? h("button",{className:"btnd",onClick:()=>deleteEvent(editingEvent.id)},"Delete event")
+            : h("div"),
+          h("div",{style:{display:"flex",gap:8}},
+            h("button",{className:"btn",onClick:()=>{setAddingEvent(null);setEditingEvent(null);}},"Cancel"),
+            h("button",{className:"btnp",onClick:saveEvent},"Save event")
+          )
+        )
+      )
+    )
+  );
+};
+
+// ── Coach Dashboard ───────────────────────────────────────────────────────────
+const CoachDashboard = ({user,onSignOut}) => {
+  const [athletes,setAthletes]=useState([]);
+  const [groups,setGroups]=useState([]);
+  const [selectedAthlete,setSelectedAthlete]=useState(null);
+  const [addingAthlete,setAddingAthlete]=useState(false);
+  const [showGroups,setShowGroups]=useState(false);
+  const [showCalendar,setShowCalendar]=useState(false);
+  const [search,setSearch]=useState("");
+  const [filter,setFilter]=useState("all");
+  const [loading,setLoading]=useState(true);
+  const [toast,setToast]=useState(null);
+  const [weeklyReports,setWeeklyReports]=useState({});
+  const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
+
+  const loadData=async()=>{
+    const [aths,grps]=await Promise.all([dbList("athletes"),dbList("groups")]);
+    setAthletes(aths);
+    setGroups(grps);
+    // load this week's reports for all athletes for compliance strip
+    const wk=weekKey(0);
+    const repPromises=aths.map(a=>dbGet(`reports/${a.id}/weeks/${wk}`).then(r=>({id:a.id,r})));
+    const reps=await Promise.all(repPromises);
+    const repMap={};
+    reps.forEach(({id,r})=>{repMap[id]=r||{};});
+    setWeeklyReports(repMap);
+    setLoading(false);
+  };
+
+  useEffect(()=>{loadData();},[]);
+
+  const addAthlete=async(f)=>{
+    try{
+      const {auth,createUserWithEmailAndPassword}=fb();
+      const cred=await createUserWithEmailAndPassword(auth,f.email,f.password);
+      const uid=cred.user.uid;
+      const data={name:f.name,level:f.level||"recreational",age:f.age||"",pb5k:f.pb5k||"",pb10k:f.pb10k||"",pbHalf:f.pbHalf||"",pbMarathon:f.pbMarathon||"",events:f.events||"",notes:f.notes||"",groupId:f.groupId||"",role:"athlete"};
+      await dbSet(`athletes/${uid}`,data);
+      setAthletes(prev=>[...prev,{id:uid,...data}]);
+      setAddingAthlete(false);
+      showToast("Athlete added & account created");
+      // sign coach back in — Firebase auto-signs in new user, so reload
+      window.location.reload();
+    }catch(e){showToast("Error: "+e.message,false);}
+  };
+
+  const updateAthlete=async(updated)=>{
+    setAthletes(prev=>prev.map(a=>a.id===updated.id?updated:a));
+  };
+
+  const deleteAthlete=async(id)=>{
+    await dbDel(`athletes/${id}`);
+    setAthletes(prev=>prev.filter(a=>a.id!==id));
+    showToast("Athlete removed");
+  };
+
+  const addGroup=async(name)=>{
+    const id="g"+Date.now();
+    await dbSet(`groups/${id}`,{name,id});
+    setGroups(prev=>[...prev,{id,name}]);
+    showToast("Group created");
+  };
+
+  const deleteGroup=async(id)=>{
+    if(!window.confirm("Delete this group?"))return;
+    await dbDel(`groups/${id}`);
+    setGroups(prev=>prev.filter(g=>g.id!==id));
+    showToast("Group deleted");
+  };
+
+  const wk0=weekKey(0),today=todayShort();
+  const filtered=athletes.filter(a=>a.name.toLowerCase().includes(search.toLowerCase())&&(filter==="all"||a.level===filter));
+  const serious=filtered.filter(a=>a.level==="serious");
+  const recreational=filtered.filter(a=>a.level==="recreational");
+
+  const getComp=(ath)=>{
+    const reps=weeklyReports[ath.id]||{};
+    // we don't have plans cached here — just show report count
+    const reported=DAYS.filter(d=>reps[d]?.sessions?.length>0).length;
+    return reported>0?reported:null;
+  };
+
+  if(selectedAthlete)return h(AthleteDetail,{athlete:selectedAthlete,groups,onBack:()=>setSelectedAthlete(null),onUpdate:updateAthlete,coachId:user.uid});
+  if(showCalendar)return h(SeasonCalendar,{onClose:()=>setShowCalendar(false),isCoach:true});
+
+  return h("div",{style:{maxWidth:780,margin:"0 auto",padding:"1.5rem 1rem"}},
+    toast&&h(Toast,{msg:toast.msg,ok:toast.ok}),
+    h("div",{style:{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:"1.75rem"}},
+      h("div",null,
+        h("div",{style:{fontSize:10,fontWeight:700,color:"#F5A623",letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:4}},"Amit 1"),
+        h("h1",{style:{fontSize:26,fontWeight:700,margin:0,letterSpacing:"-0.02em"}},"Running Coach"),
+        h("div",{style:{fontSize:13,color:"#8A9BB0",marginTop:3}},weekLabel(0)+" · "+athletes.length+" athletes")
+      ),
+      h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}},
+        h("button",{className:"btn btns",onClick:()=>setShowCalendar(true)},"📅 Season"),
+        h("button",{className:"btn btns",onClick:()=>setShowGroups(true)},"👥 Groups"),
+        h("button",{className:"btnp",onClick:()=>setAddingAthlete(true)},"+  Add athlete"),
+        h("button",{className:"btn btns",onClick:onSignOut},"Sign out")
+      )
+    ),
+    h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"},className:"strow"},
+      h(StatCard,{label:"Total athletes",value:athletes.length}),
+      h(StatCard,{label:"Serious",value:athletes.filter(a=>a.level==="serious").length,accent:"#6040C0"}),
+      h(StatCard,{label:"Groups",value:groups.length,accent:"#F5A623"}),
+      h(StatCard,{label:"Today",value:today})
+    ),
+    h("div",{style:{display:"flex",gap:8,marginBottom:"1.25rem"}},
+      h("input",{value:search,onChange:e=>setSearch(e.target.value),placeholder:"Search athletes…",style:{flex:1}}),
+      ["all","serious","recreational"].map(f=>h("button",{key:f,onClick:()=>setFilter(f),style:{border:filter===f?"none":"0.5px solid #CBD5E0",background:filter===f?"#F5A623":"#fff",color:filter===f?"#fff":"#4A5568",borderRadius:6,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer"}},f==="all"?"All":f==="serious"?"Serious":"Recreational"))
+    ),
+    loading&&h(Spinner),
+    addingAthlete&&h(Modal,{title:"Add new athlete",onClose:()=>setAddingAthlete(false),wide:true},h(AthleteForm,{groups,onCancel:()=>setAddingAthlete(false),onSave:addAthlete})),
+    showGroups&&h(GroupsManager,{groups,athletes,onAddGroup:addGroup,onDeleteGroup:deleteGroup,onSaveGroupPlan:()=>{},onClose:()=>setShowGroups(false)}),
+    !loading&&[{title:"Serious athletes",list:serious},{title:"Recreational runners",list:recreational}].map(group=>
+      group.list.length>0&&h("div",{key:group.title,style:{marginBottom:"1.75rem"}},
+        h("div",{className:"stit"},group.title+" · "+group.list.length),
+        group.list.map(ath=>{
+          const reps=weeklyReports[ath.id]||{};
+          const reported=DAYS.filter(d=>reps[d]?.sessions?.length>0).length;
+          const grp=groups.find(g=>g.id===ath.groupId);
+          return h("div",{key:ath.id,className:"card",style:{marginBottom:8},onClick:()=>setSelectedAthlete(ath)},
+            h("div",{style:{display:"flex",alignItems:"center",gap:12}},
+              h(Avatar,{name:ath.name,level:ath.level}),
+              h("div",{style:{flex:1,minWidth:0}},
+                h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:2,flexWrap:"wrap"}},
+                  h("span",{style:{fontWeight:700,fontSize:15}},ath.name),
+                  h("span",{style:{fontSize:11,color:"#8A9BB0"}},"Age "+ath.age),
+                  ath.pb5k&&h("span",{className:"mono",style:{fontSize:11,color:"#4A5568"}},"5K "+ath.pb5k),
+                  grp&&h("span",{style:{fontSize:10,padding:"1px 6px",borderRadius:3,background:"#FEF3E0",color:"#9A6610",fontWeight:600}},"📋 "+grp.name)
+                ),
+                h("div",{style:{fontSize:12,color:"#8A9BB0"}},reported>0?"This week: "+reported+" day"+(reported!==1?"s":"")+" reported":"No reports this week")
+              ),
+              h("div",{style:{display:"flex",alignItems:"center",gap:8,flexShrink:0}},
+                reported>0&&h("span",{style:{fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:5,background:"#E8F8F0",color:"#1A7A43"}},reported+"d"),
+                h("button",{onClick:e=>{e.stopPropagation();if(window.confirm("Remove "+ath.name+"?"))deleteAthlete(ath.id);},style:{border:"0.5px solid #E05C5C",background:"#FFF0F0",cursor:"pointer",color:"#E05C5C",fontSize:13,fontWeight:600,padding:"3px 9px",borderRadius:5}},"✕")
+              )
+            )
+          );
+        })
+      )
+    ),
+    !loading&&filtered.length===0&&h("div",{style:{textAlign:"center",padding:"4rem 2rem",color:"#8A9BB0"}},
+      h("div",{style:{fontSize:40,marginBottom:12}},"🏃"),
+      h("div",{style:{fontSize:16,fontWeight:700,marginBottom:6,color:"#0F1117"}},"No athletes yet"),
+      h("div",{style:{fontSize:14}},"Add your first athlete using the button above.")
+    )
+  );
+};
+
+// ── Login Screen ──────────────────────────────────────────────────────────────
+const LoginScreen = ({onLogin}) => {
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [error,setError]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [resetSent,setResetSent]=useState(false);
+
+  const login=async()=>{
+    if(!email||!password){setError("Please enter email and password.");return;}
+    setLoading(true);setError("");
+    try{
+      const {auth,signInWithEmailAndPassword}=fb();
+      await signInWithEmailAndPassword(auth,email,password);
+    }catch(e){
+      setError("Incorrect email or password. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  const resetPassword=async()=>{
+    if(!email){setError("Enter your email above first.");return;}
+    try{
+      const {auth,sendPasswordResetEmail}=fb();
+      await sendPasswordResetEmail(auth,email);
+      setResetSent(true);setError("");
+    }catch(e){setError("Could not send reset email.");}
+  };
+
+  return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem",background:"#F4F6F9"}},
+    h("div",{className:"login-box"},
+      h("div",{style:{textAlign:"center",marginBottom:28}},
+        h("div",{style:{fontSize:11,fontWeight:700,color:"#F5A623",letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:6}},"Amit 1"),
+        h("div",{style:{fontSize:24,fontWeight:700,marginBottom:4}},"Running Coach"),
+        h("div",{style:{fontSize:13,color:"#8A9BB0"}},"Sign in to continue")
+      ),
+      h("div",{style:{marginBottom:12}},h("label",{className:"lbl"},"Email"),h("input",{type:"email",value:email,onChange:e=>setEmail(e.target.value),placeholder:"your@email.com",onKeyDown:e=>e.key==="Enter"&&login()})),
+      h("div",{style:{marginBottom:20}},h("label",{className:"lbl"},"Password"),h("input",{type:"password",value:password,onChange:e=>setPassword(e.target.value),placeholder:"••••••••",onKeyDown:e=>e.key==="Enter"&&login()})),
+      error&&h("div",{style:{fontSize:13,color:"#902020",background:"#FCEAEA",padding:"8px 12px",borderRadius:6,marginBottom:12}},error),
+      resetSent&&h("div",{style:{fontSize:13,color:"#1A7A43",background:"#E8F8F0",padding:"8px 12px",borderRadius:6,marginBottom:12}},"Password reset email sent. Check your inbox."),
+      h("button",{className:"btnp",onClick:login,disabled:loading,style:{width:"100%",justifyContent:"center",marginBottom:10}},loading?h("div",{className:"spin"}):"Sign in"),
+      h("button",{onClick:resetPassword,style:{border:"none",background:"none",color:"#8A9BB0",fontSize:12,cursor:"pointer",width:"100%",textAlign:"center"}},"Forgot password?")
+    )
+  );
+};
+
+// ── Root App ──────────────────────────────────────────────────────────────────
+function App() {
+  const [fbReady,setFbReady]=useState(!!window._firebase);
+  const [user,setUser]=useState(null);
+  const [authLoading,setAuthLoading]=useState(true);
+  const [role,setRole]=useState(null); // "coach" | "athlete"
+
+  useEffect(()=>{
+    const init=()=>{
+      setFbReady(true);
+      const {auth,onAuthStateChanged}=fb();
+      onAuthStateChanged(auth,async(u)=>{
+        if(u){
+          // check if coach
+          if(u.email===COACH_EMAIL){setRole("coach");setUser(u);}
+          else{
+            const profile=await dbGet(`athletes/${u.uid}`);
+            if(profile){setRole("athlete");setUser(u);}
+            else{setRole("coach");setUser(u);}
+          }
+        }else{setUser(null);setRole(null);}
+        setAuthLoading(false);
+      });
+    };
+    if(window._firebase)init();
+    else window.addEventListener("firebase-ready",init,{once:true});
+  },[]);
+
+  const signOut=()=>{const {auth,signOut:so}=fb();so(auth);};
+
+  if(!fbReady||authLoading)return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}},h("div",{className:"spin"}));
+  if(!user)return h(LoginScreen);
+  if(role==="athlete")return h(AthleteHome,{user,onSignOut:signOut});
+  return h(CoachDashboard,{user,onSignOut:signOut});
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
+</script>
+</body>
+</html>
