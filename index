@@ -476,8 +476,8 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   const [f, setF] = useState(()=>{
     const base = existing||{};
     // For hills: if no existing report data, pre-populate from plan's hillRows
-    if (type==="hills" && !base.hillRows && planPart?.hillRows?.length>0) {
-      return {...base, hillRows: planPart.hillRows.map(r=>({...r}))};
+    if (type==="hills" && !base.hillRows && planPart && getHillRows(planPart).length>0) {
+      return {...base, hillRows: getHillRows(planPart).map(r=>({...r}))};
     }
     return base;
   });
@@ -548,7 +548,8 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   );
 
   if (type==="hills") {
-    const rows = getHillRows(f).length > 0 ? getHillRows(f) : (planPart?.hillRows ? getHillRows(planPart) : [{sets:"",reps:"",distM:""}]);
+    const planHillRows = planPart ? getHillRows(planPart) : [];
+    const rows = getHillRows(f).length > 0 ? getHillRows(f) : (planHillRows.length > 0 ? planHillRows : [{sets:"",reps:"",distM:""}]);
     const updateRow = (i,k,v) => {
       const nr=[...rows]; nr[i]={...nr[i],[k]:v};
       s("hillRows",nr);
