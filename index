@@ -136,7 +136,16 @@ const sessFirstType = s => s.parts&&s.parts.length>0?s.parts[0].type:"easy";
 // Bulletproof plan normalization — handles any format Firebase might return
 const normalizePart = p => {
   if(!p||typeof p!=="object") return newPart();
-  return { type:p.type||"easy", distance:p.distance||"", pace:p.pace||"", notes:p.notes||"", _showPace:!!(p.pace||p._showPace), ...(p.hillRows?{hillRows:p.hillRows}:{}) };
+  // hillRows might be nested inside the array items or at the top level
+  const hillRows = p.hillRows || null;
+  return { 
+    type:p.type||"easy", 
+    distance:p.distance||"", 
+    pace:p.pace||"", 
+    notes:p.notes||"", 
+    _showPace:!!(p.pace||p._showPace),
+    ...(hillRows ? {hillRows: Array.isArray(hillRows) ? hillRows : Object.values(hillRows)} : {})
+  };
 };
 const normalizeSess = s => {
   if(!s||typeof s!=="object") return newSess();
