@@ -838,6 +838,13 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                                   return (sets>1?sets+"×":"")+reps+"×"+dist+"m";
                                 }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km"
                               )
+                            : part.type==="hills"&&part.hillRows&&!Array.isArray(part.hillRows)
+                            ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},
+                                Object.values(part.hillRows).filter(r=>parseFloat(r.reps)>0).map((r)=>{
+                                  const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+                                  return (sets>1?sets+"×":"")+reps+"×"+dist+"m";
+                                }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km"
+                              )
                             : part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
                           part.type!=="hills"&&part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"#8A9BB0"}},"@ "+part.pace+"/km")
                         ),
