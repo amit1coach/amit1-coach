@@ -48,6 +48,8 @@ input.vague::placeholder{color:#E2E8F0;font-style:italic;font-weight:300}
 </head>
 <body>
 <div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
 <!-- Firebase SDKs -->
 <script type="module">
@@ -71,8 +73,6 @@ window._firebase = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateC
 window.dispatchEvent(new Event("firebase-ready"));
 </script>
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script>
 const {useState,useEffect,useCallback,useRef,createElement:h,Fragment} = React;
 
