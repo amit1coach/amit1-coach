@@ -74,6 +74,7 @@ window.dispatchEvent(new Event("firebase-ready"));
 </script>
 
 <script>
+window.addEventListener("load", function() {
 const {useState,useEffect,useCallback,useRef,createElement:h,Fragment} = React;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1756,6 +1757,7 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
+}); // end window.addEventListener load
 </script>
 </body>
 </html>
