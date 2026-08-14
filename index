@@ -854,7 +854,6 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                             ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},hillRowsSummary(part))
                             : part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
                           part.type!=="hills"&&part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"#8A9BB0"}},"@ "+part.pace+"/km")
-                          part.type!=="hills"&&part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"#8A9BB0"}},"@ "+part.pace+"/km")
                         ),
                         part.notes&&h("div",{style:{fontSize:11,color:"#4A5568"}},part.notes)
                       );
