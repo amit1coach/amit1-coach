@@ -176,6 +176,24 @@ const migratePlan = plan => {
   return r;
 };
 
+// Robustly get hillRows from a part in any storage format
+const getHillRows = part => {
+  if(!part) return [];
+  const hr = part.hillRows;
+  if(!hr) return [];
+  if(Array.isArray(hr)) return hr;
+  if(typeof hr==="object") return Object.values(hr);
+  return [];
+};
+const hillRowsSummary = part => {
+  const rows = getHillRows(part).filter(r=>parseFloat(r.reps)>0);
+  if(!rows.length) return null;
+  return rows.map(r=>{
+    const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+    return (sets>1?sets+"×":"")+reps+"×"+dist+"m";
+  }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km";
+};
+
 const fb = () => window._firebase;
 
 const dbGetPlan = async (athleteId, off=0) => {
@@ -276,7 +294,7 @@ const WeekStrip = ({plan={},reports={},compact=false}) =>
 
 // ── Part Editor ───────────────────────────────────────────────────────────────
 const HillPlanRows = ({part, onChange}) => {
-  const rows = part.hillRows || [{sets:"",reps:"",distM:""}];
+  const rows = getHillRows(part).length > 0 ? getHillRows(part) : [{sets:"",reps:"",distM:""}];
   const update = (i,k,v) => {
     const nr=[...rows]; nr[i]={...nr[i],[k]:v};
     const totalKm=nr.reduce((t,r)=>{
@@ -530,7 +548,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   );
 
   if (type==="hills") {
-    const rows = f.hillRows || [{sets:"",reps:"",distM:""}];
+    const rows = getHillRows(f).length > 0 ? getHillRows(f) : (planPart?.hillRows ? getHillRows(planPart) : [{sets:"",reps:"",distM:""}]);
     const updateRow = (i,k,v) => {
       const nr=[...rows]; nr[i]={...nr[i],[k]:v};
       s("hillRows",nr);
@@ -831,21 +849,10 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                         parts.length>1&&h("div",{style:{fontSize:9,color:"#8A9BB0",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}},"Part "+(pi+1)),
                         h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:part.notes?3:0}},
                           h("span",{className:"wtb",style:{background:wt.bg,color:wt.dark,border:`0.5px solid ${wt.color}44`,fontSize:11}},wt.label),
-                          part.type==="hills"&&Array.isArray(part.hillRows)&&part.hillRows.some(r=>parseFloat(r.reps)>0)
-                            ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},
-                                part.hillRows.filter(r=>parseFloat(r.reps)>0).map((r,ri)=>{
-                                  const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-                                  return (sets>1?sets+"×":"")+reps+"×"+dist+"m";
-                                }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km"
-                              )
-                            : part.type==="hills"&&part.hillRows&&!Array.isArray(part.hillRows)
-                            ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},
-                                Object.values(part.hillRows).filter(r=>parseFloat(r.reps)>0).map((r)=>{
-                                  const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-                                  return (sets>1?sets+"×":"")+reps+"×"+dist+"m";
-                                }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km"
-                              )
+                          part.type==="hills"&&hillRowsSummary(part)
+                            ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},hillRowsSummary(part))
                             : part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
+                          part.type!=="hills"&&part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"#8A9BB0"}},"@ "+part.pace+"/km")
                           part.type!=="hills"&&part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"#8A9BB0"}},"@ "+part.pace+"/km")
                         ),
                         part.notes&&h("div",{style:{fontSize:11,color:"#4A5568"}},part.notes)
