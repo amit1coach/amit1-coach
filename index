@@ -50,9 +50,9 @@ input.vague::placeholder{color:#E2E8F0;font-style:italic;font-weight:300}
 <div id="root"></div>
 
 <!-- Firebase compat (no module imports needed) -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
@@ -554,9 +554,11 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
 
   if (type==="hills") {
     const planHillRows = planPart ? getHillRows(planPart) : [];
-    const rows = getHillRows(f).length > 0 ? getHillRows(f) : (planHillRows.length > 0 ? planHillRows : [{sets:"",reps:"",distM:""}]);
+    const initRows = getHillRows(f).length > 0 ? getHillRows(f) : (planHillRows.length > 0 ? planHillRows : [{sets:"",reps:"",distM:""}]);
+    const [rows, setRows] = useState(initRows);
     const updateRow = (i,k,v) => {
       const nr=[...rows]; nr[i]={...nr[i],[k]:v};
+      setRows(nr);
       s("hillRows",nr);
       const totalKm=nr.reduce((t,r)=>{
         const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
@@ -564,9 +566,10 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
       },0);
       s("actualDistance",totalKm.toFixed(3));
     };
-    const addRow = () => s("hillRows",[...rows,{sets:"",reps:"",distM:""}]);
+    const addRow = () => { const nr=[...rows,{sets:"",reps:"",distM:""}]; setRows(nr); s("hillRows",nr); };
     const removeRow = i => {
       const nr=rows.filter((_,idx)=>idx!==i);
+      setRows(nr);
       s("hillRows",nr);
       const totalKm=nr.reduce((t,r)=>{
         const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
