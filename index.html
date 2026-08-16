@@ -1748,7 +1748,7 @@ function App() {
 
   const signOut=()=>{ _auth.signOut(); };
 
-  if(!fbReady||authLoading)return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}},h("div",{className:"spin"}));
+  if(authLoading)return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}},h("div",{className:"spin"}));
   if(!user)return h(LoginScreen);
   if(role==="athlete")return h(AthleteHome,{user,onSignOut:signOut});
   return h(CoachDashboard,{user,onSignOut:signOut});
