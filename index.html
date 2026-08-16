@@ -49,12 +49,15 @@ input.vague::placeholder{color:#E2E8F0;font-style:italic;font-weight:300}
 <body>
 <div id="root"></div>
 
-<!-- Firebase SDKs -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+<!-- Firebase compat (no module imports needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
+<script>
+// Initialize Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyDJ4eH7n4xZH6UkGmvVNDu8W9npnoklsEs",
   authDomain: "amit1-9b45d.firebaseapp.com",
@@ -63,18 +66,70 @@ const firebaseConfig = {
   messagingSenderId: "654375010027",
   appId: "1:654375010027:web:b34774524c4cd67ff748ae"
 };
+firebase.initializeApp(firebaseConfig);
+const _auth = firebase.auth();
+const _db = firebase.firestore();
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-window._firebase = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, onSnapshot };
-window.dispatchEvent(new Event("firebase-ready"));
-</script>
+// Firebase helpers using compat API
+const fb = () => ({
+  auth: _auth,
+  db: _db
+});
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script>
-// Wait for React to be available
+const dbGet = async (path) => {
+  const parts = path.split("/");
+  let ref = _db;
+  for (let i = 0; i < parts.length; i++) {
+    ref = i % 2 === 0 ? ref.collection(parts[i]) : ref.doc(parts[i]);
+  }
+  const snap = await ref.get();
+  return snap.exists ? snap.data() : null;
+};
+
+const dbSet = async (path, data) => {
+  const parts = path.split("/");
+  let ref = _db;
+  for (let i = 0; i < parts.length; i++) {
+    ref = i % 2 === 0 ? ref.collection(parts[i]) : ref.doc(parts[i]);
+  }
+  await ref.set(data, {merge: true});
+};
+
+const dbDel = async (path) => {
+  const parts = path.split("/");
+  let ref = _db;
+  for (let i = 0; i < parts.length; i++) {
+    ref = i % 2 === 0 ? ref.collection(parts[i]) : ref.doc(parts[i]);
+  }
+  await ref.delete();
+};
+
+const dbList = async (col) => {
+  const snap = await _db.collection(col).get();
+  return snap.docs.map(d => ({id: d.id, ...d.data()}));
+};
+
+const dbGetPlan = async (athleteId, off=0) => {
+  try {
+    const snap = await _db.collection(`plans/${athleteId}/weeks`).get();
+    if (snap.empty) return null;
+    const wk = weekKey(off);
+    const docList = snap.docs.map(d => ({id: d.id, data: d.data()}));
+    const exact = docList.find(d => d.id === wk);
+    if (exact) return exact.data;
+    for (let delta = -2; delta <= 2; delta++) {
+      if (delta === 0) continue;
+      const base = new Date(wk + "T12:00:00");
+      base.setDate(base.getDate() + delta);
+      const tryKey = base.getFullYear()+"-"+String(base.getMonth()+1).padStart(2,"0")+"-"+String(base.getDate()).padStart(2,"0");
+      const found = docList.find(d => d.id === tryKey);
+      if (found) return found.data;
+    }
+    docList.sort((a,b) => b.id.localeCompare(a.id));
+    return docList[0]?.data || null;
+  } catch(e) { console.error("dbGetPlan error:", e); return null; }
+};
+
 const {useState,useEffect,useCallback,useRef,createElement:h,Fragment} = React;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -136,7 +191,16 @@ const sessFirstType = s => s.parts&&s.parts.length>0?s.parts[0].type:"easy";
 // Bulletproof plan normalization — handles any format Firebase might return
 const normalizePart = p => {
   if(!p||typeof p!=="object") return newPart();
-  return { type:p.type||"easy", distance:p.distance||"", pace:p.pace||"", notes:p.notes||"", _showPace:!!(p.pace||p._showPace), ...(p.hillRows?{hillRows:p.hillRows}:{}) };
+  // hillRows might be nested inside the array items or at the top level
+  const hillRows = p.hillRows || null;
+  return { 
+    type:p.type||"easy", 
+    distance:p.distance||"", 
+    pace:p.pace||"", 
+    notes:p.notes||"", 
+    _showPace:!!(p.pace||p._showPace),
+    ...(hillRows ? {hillRows: Array.isArray(hillRows) ? hillRows : Object.values(hillRows)} : {})
+  };
 };
 const normalizeSess = s => {
   if(!s||typeof s!=="object") return newSess();
@@ -167,56 +231,24 @@ const migratePlan = plan => {
   return r;
 };
 
-const fb = () => window._firebase;
-
-const dbGetPlan = async (athleteId, off=0) => {
-  const {db, collection:col, getDocs} = fb();
-  try {
-    const weeksRef = col(db, `plans/${athleteId}/weeks`);
-    const snap = await getDocs(weeksRef);
-    if (snap.empty) return null;
-    const docList = [];
-    snap.forEach(d => docList.push({id:d.id, data:d.data()}));
-    const wk = weekKey(off);
-    // Try exact match first
-    const exact = docList.find(d => d.id === wk);
-    if (exact) return exact.data;
-    // Try ±2 days to handle any timezone edge case
-    for (let delta = -2; delta <= 2; delta++) {
-      if (delta === 0) continue;
-      const base = new Date(wk + "T12:00:00");
-      base.setDate(base.getDate() + delta);
-      const tryKey = `${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,"0")}-${String(base.getDate()).padStart(2,"0")}`;
-      const found = docList.find(d => d.id === tryKey);
-      if (found) return found.data;
-    }
-    // Last resort: most recent document
-    docList.sort((a,b) => b.id.localeCompare(a.id));
-    return docList[0]?.data || null;
-  } catch(e) {
-    console.error("dbGetPlan error:", e);
-    return null;
-  }
+// Robustly get hillRows from a part in any storage format
+const getHillRows = part => {
+  if(!part) return [];
+  const hr = part.hillRows;
+  if(!hr) return [];
+  if(Array.isArray(hr)) return hr;
+  if(typeof hr==="object") return Object.values(hr);
+  return [];
+};
+const hillRowsSummary = part => {
+  const rows = getHillRows(part).filter(r=>parseFloat(r.reps)>0);
+  if(!rows.length) return null;
+  return rows.map(r=>{
+    const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+    return (sets>1?sets+"×":"")+reps+"×"+dist+"m";
+  }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km";
 };
 
-const dbGet = async (path) => {
-  const {db,doc,getDoc} = fb();
-  const snap = await getDoc(doc(db,...path.split("/")));
-  return snap.exists() ? snap.data() : null;
-};
-const dbSet = async (path, data) => {
-  const {db,doc,setDoc} = fb();
-  await setDoc(doc(db,...path.split("/")), data, {merge:true});
-};
-const dbDel = async (path) => {
-  const {db,doc,deleteDoc} = fb();
-  await deleteDoc(doc(db,...path.split("/")));
-};
-const dbList = async (col) => {
-  const {db,collection,getDocs} = fb();
-  const snap = await getDocs(collection(db,col));
-  return snap.docs.map(d=>({id:d.id,...d.data()}));
-};
 
 // ── Small UI components ───────────────────────────────────────────────────────
 const Avatar = ({name,level,size=38}) => {
@@ -267,7 +299,7 @@ const WeekStrip = ({plan={},reports={},compact=false}) =>
 
 // ── Part Editor ───────────────────────────────────────────────────────────────
 const HillPlanRows = ({part, onChange}) => {
-  const rows = part.hillRows || [{sets:"",reps:"",distM:""}];
+  const rows = getHillRows(part).length > 0 ? getHillRows(part) : [{sets:"",reps:"",distM:""}];
   const update = (i,k,v) => {
     const nr=[...rows]; nr[i]={...nr[i],[k]:v};
     const totalKm=nr.reduce((t,r)=>{
@@ -449,8 +481,8 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   const [f, setF] = useState(()=>{
     const base = existing||{};
     // For hills: if no existing report data, pre-populate from plan's hillRows
-    if (type==="hills" && !base.hillRows && planPart?.hillRows?.length>0) {
-      return {...base, hillRows: planPart.hillRows.map(r=>({...r}))};
+    if (type==="hills" && !base.hillRows && planPart && getHillRows(planPart).length>0) {
+      return {...base, hillRows: getHillRows(planPart).map(r=>({...r}))};
     }
     return base;
   });
@@ -521,9 +553,12 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   );
 
   if (type==="hills") {
-    const rows = f.hillRows || [{sets:"",reps:"",distM:""}];
+    const planHillRows = planPart ? getHillRows(planPart) : [];
+    const initRows = getHillRows(f).length > 0 ? getHillRows(f) : (planHillRows.length > 0 ? planHillRows : [{sets:"",reps:"",distM:""}]);
+    const [rows, setRows] = useState(initRows);
     const updateRow = (i,k,v) => {
       const nr=[...rows]; nr[i]={...nr[i],[k]:v};
+      setRows(nr);
       s("hillRows",nr);
       const totalKm=nr.reduce((t,r)=>{
         const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
@@ -531,9 +566,10 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
       },0);
       s("actualDistance",totalKm.toFixed(3));
     };
-    const addRow = () => s("hillRows",[...rows,{sets:"",reps:"",distM:""}]);
+    const addRow = () => { const nr=[...rows,{sets:"",reps:"",distM:""}]; setRows(nr); s("hillRows",nr); };
     const removeRow = i => {
       const nr=rows.filter((_,idx)=>idx!==i);
+      setRows(nr);
       s("hillRows",nr);
       const totalKm=nr.reduce((t,r)=>{
         const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
@@ -822,8 +858,10 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                         parts.length>1&&h("div",{style:{fontSize:9,color:"#8A9BB0",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}},"Part "+(pi+1)),
                         h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:part.notes?3:0}},
                           h("span",{className:"wtb",style:{background:wt.bg,color:wt.dark,border:`0.5px solid ${wt.color}44`,fontSize:11}},wt.label),
-                          part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
-                          part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"#8A9BB0"}},"@ "+part.pace+"/km")
+                          part.type==="hills"&&hillRowsSummary(part)
+                            ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},hillRowsSummary(part))
+                            : part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
+                          part.type!=="hills"&&part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"#8A9BB0"}},"@ "+part.pace+"/km")
                         ),
                         part.notes&&h("div",{style:{fontSize:11,color:"#4A5568"}},part.notes)
                       );
@@ -1528,9 +1566,8 @@ const CoachDashboard = ({user,onSignOut}) => {
 
   const addAthlete=async(f)=>{
     try{
-      const {auth,createUserWithEmailAndPassword}=fb();
-      const cred=await createUserWithEmailAndPassword(auth,f.email,f.password);
-      const uid=cred.user.uid;
+      const cred = await _auth.createUserWithEmailAndPassword(f.email, f.password);
+      const uid = cred.user.uid;
       const data={name:f.name,level:f.level||"recreational",age:f.age||"",pb5k:f.pb5k||"",pb10k:f.pb10k||"",pbHalf:f.pbHalf||"",pbMarathon:f.pbMarathon||"",events:f.events||"",notes:f.notes||"",groupId:f.groupId||"",role:"athlete"};
       await dbSet(`athletes/${uid}`,data);
       setAthletes(prev=>[...prev,{id:uid,...data}]);
@@ -1656,8 +1693,7 @@ const LoginScreen = ({onLogin}) => {
     if(!email||!password){setError("Please enter email and password.");return;}
     setLoading(true);setError("");
     try{
-      const {auth,signInWithEmailAndPassword}=fb();
-      await signInWithEmailAndPassword(auth,email,password);
+      await _auth.signInWithEmailAndPassword(email,password);
     }catch(e){
       setError("Incorrect email or password. Please try again.");
       setLoading(false);
@@ -1667,8 +1703,7 @@ const LoginScreen = ({onLogin}) => {
   const resetPassword=async()=>{
     if(!email){setError("Enter your email above first.");return;}
     try{
-      const {auth,sendPasswordResetEmail}=fb();
-      await sendPasswordResetEmail(auth,email);
+      await _auth.sendPasswordResetEmail(email);
       setResetSent(true);setError("");
     }catch(e){setError("Could not send reset email.");}
   };
@@ -1692,33 +1727,26 @@ const LoginScreen = ({onLogin}) => {
 
 // ── Root App ──────────────────────────────────────────────────────────────────
 function App() {
-  const [fbReady,setFbReady]=useState(!!window._firebase);
   const [user,setUser]=useState(null);
   const [authLoading,setAuthLoading]=useState(true);
-  const [role,setRole]=useState(null); // "coach" | "athlete"
+  const [role,setRole]=useState(null);
 
   useEffect(()=>{
-    const init=()=>{
-      setFbReady(true);
-      const {auth,onAuthStateChanged}=fb();
-      onAuthStateChanged(auth,async(u)=>{
-        if(u){
-          // check if coach
-          if(u.email===COACH_EMAIL){setRole("coach");setUser(u);}
-          else{
-            const profile=await dbGet(`athletes/${u.uid}`);
-            if(profile){setRole("athlete");setUser(u);}
-            else{setRole("coach");setUser(u);}
-          }
-        }else{setUser(null);setRole(null);}
-        setAuthLoading(false);
-      });
-    };
-    if(window._firebase)init();
-    else window.addEventListener("firebase-ready",init,{once:true});
+    const unsub = _auth.onAuthStateChanged(async(u)=>{
+      if(u){
+        if(u.email===COACH_EMAIL){setRole("coach");setUser(u);}
+        else{
+          const profile=await dbGet(`athletes/${u.uid}`);
+          if(profile){setRole("athlete");setUser(u);}
+          else{setRole("coach");setUser(u);}
+        }
+      }else{setUser(null);setRole(null);}
+      setAuthLoading(false);
+    });
+    return ()=>unsub();
   },[]);
 
-  const signOut=()=>{const {auth,signOut:so}=fb();so(auth);};
+  const signOut=()=>{ _auth.signOut(); };
 
   if(!fbReady||authLoading)return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}},h("div",{className:"spin"}));
   if(!user)return h(LoginScreen);
