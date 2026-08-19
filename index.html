@@ -640,7 +640,10 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   }
 
   if (type==="fartlek") return h("div",{style:{marginBottom:8}},
-    h("div",{style:{marginBottom:8}},h(ActualDistanceField,{f,s,planPart,label:"Actual total distance (km)"})),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
+      h(ActualDistanceField,{f,s,planPart,label:"Actual total distance (km)"}),
+      h("div",null,h("label",{className:"lbl"},"Total average pace (mm:ss)"),h("input",{value:f.avgPace||"",onChange:e=>s("avgPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
+    ),
     h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
       h("div",null,h("label",{className:"lbl"},"Faster pace (mm:ss)"),h("input",{value:f.fasterPace||"",onChange:e=>s("fasterPace",e.target.value),placeholder:"e.g. 4:10",className:"mono"})),
       h("div",null,h("label",{className:"lbl"},"Transition pace (mm:ss)"),h("input",{value:f.transitionPace||"",onChange:e=>s("transitionPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
@@ -887,7 +890,8 @@ const repSummary = (rep, parts) => {
         if (td.fasterPace) detail += ` · faster ${td.fasterPace}/km`;
       }
       else if (type==="fartlek") {
-        if (td.fasterPace) detail = `faster ${td.fasterPace}/km · transition ${td.transitionPace||"–"}/km`;
+        if (td.avgPace) detail += `avg ${td.avgPace}/km`;
+        if (td.fasterPace) detail += `${detail?" · ":""}faster ${td.fasterPace}/km · transition ${td.transitionPace||"–"}/km`;
       }
       else if (type==="hills") {
         const hillRows = td.hillRows||[];
