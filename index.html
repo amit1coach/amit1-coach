@@ -795,14 +795,16 @@ const SessRepForm = ({session, existing, onChange}) => {
   );
 };
 
-const SliderScale = ({label,value,onChange,leftLabel,rightLabel,reverse=false}) => {
+const SliderScale = ({label,value,onChange,leftLabel,rightLabel,reverse=false,emojis=null}) => {
   const colors=reverse
     ? ["var(--success)","#84CC16","var(--accent)","#F97316","var(--danger)"]  // 1=green, 5=red (stress)
     : ["var(--danger)","#F97316","var(--accent)","#84CC16","var(--success)"]; // 1=red, 5=green (sleep)
   const c = colors[parseInt(value)-1]||"var(--text-muted)";
+  const v = parseInt(value);
+  const icon = emojis ? (v<=2?emojis[0]:v===3?emojis[1]:emojis[2]) : null;
   return h("div",{style:{flex:1}},
     h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}},
-      h("label",{className:"lbl",style:{margin:0,fontSize:11}},label),
+      h("label",{className:"lbl",style:{margin:0,fontSize:11}},icon?icon+" "+label:label),
       h("span",{style:{fontSize:14,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}},value+"/5")
     ),
     h("input",{type:"range",min:"1",max:"5",step:"1",value:value,onChange:e=>onChange(e.target.value),style:{width:"100%",accentColor:c}}),
@@ -831,7 +833,7 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
       h("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-muted2)",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}},"How are you feeling today?"),
       h("div",{style:{display:"flex",gap:16}},
         h(SliderScale,{label:"😴 Sleep quality",value:sleep,onChange:setSleep,leftLabel:"Poor",rightLabel:"Excellent",reverse:false}),
-        h(SliderScale,{label:"🧠 Stress level",value:stress,onChange:setStress,leftLabel:"Relaxed",rightLabel:"Stressed",reverse:true})
+        h(SliderScale,{label:"Stress level",value:stress,onChange:setStress,leftLabel:"Relaxed",rightLabel:"Stressed",reverse:true,emojis:["🙂","😐","😣"]})
       )
     ),
     // WU + CD
