@@ -234,6 +234,7 @@ const sessTotalKm = s => (s.parts||[]).reduce((t,p)=>t+(parseFloat(p.distance)||
 const dayTotalKm  = d => (d?.sessions||[]).reduce((t,s)=>t+sessTotalKm(s),0);
 const dayIsRest   = d => !d||d.restDay||(d.sessions||[]).length===0;
 const sessFirstType = s => s.parts&&s.parts.length>0?s.parts[0].type:"easy";
+const stressEmoji = v => { v=parseInt(v); return v<=2?"🙂":v===3?"😐":"😣"; };
 
 // Bulletproof plan normalization — handles any format Firebase might return
 const normalizePart = p => {
@@ -991,7 +992,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                     ),
                     si===0&&r?.sleep&&h("div",{style:{display:"flex",gap:12,marginTop:4,fontSize:12,color:"var(--text-muted)"}},
                       h("span",null,"😴 Sleep: ",h("strong",{style:{color:"var(--text)"}},r.sleep+"/5")),
-                      h("span",null,"🧠 Stress: ",h("strong",{style:{color:"var(--text)"}},r.stress+"/5"))
+                      h("span",null,stressEmoji(r.stress)+" Stress: ",h("strong",{style:{color:"var(--text)"}},r.stress+"/5"))
                     ),
                     si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed var(--border)",margin:"10px 0"}})
                   );
@@ -1046,6 +1047,7 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
     const notes = r?.sessions ? (r.sessions[0]?.notes||"") : "";
     const sleep = r?.sleep ? r.sleep+"/5" : "–";
     const stress = r?.stress ? r.stress+"/5" : "–";
+    const stressIcon = r?.stress ? stressEmoji(r.stress) : "🧠";
     const types = sessions.map(s=>(s.parts||[]).map(p=>WT[p.type]?.label||p.type).join(" + ")).join(" / ");
     return `<tr>
       <td><b>${day}</b></td>
@@ -1054,7 +1056,7 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
       <td style="font-family:monospace">${actualKm} km</td>
       <td>${status}</td>
       <td>${effort}/10</td>
-      <td>😴${sleep} 🧠${stress}</td>
+      <td>😴${sleep} ${stressIcon}${stress}</td>
     </tr>${notes?`<tr><td></td><td colspan="6" style="color:var(--text-muted2);font-style:italic;font-size:12px">"${notes}"</td></tr>`:""}`;
   }).join("");
 
@@ -1241,7 +1243,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
                 rep.hr&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"AVG HR"),h("strong",{className:"mono"},rep.hr+" bpm")),
                 rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
                 si===0&&r.sleep&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
-                si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"🧠 STRESS"),h("strong",null,r.stress+"/5")),
+                si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},stressEmoji(r.stress)+" STRESS"),h("strong",null,r.stress+"/5")),
                 rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"var(--text-muted2)",fontSize:13}},'"'+rep.notes+'"'))
               ),
               si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed var(--border)",marginTop:12}})
