@@ -415,7 +415,7 @@ const PartEditor = ({part,onChange,onRemove,index,total}) => {
     h("div",{style:{flex:1}},
       h("div",{className:"row",style:{marginBottom:5,flexWrap:"wrap"}},
         h("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-muted)",minWidth:50}},"Part "+(index+1)),
-        h("select",{value:part.type,onChange:e=>onChange({...part,type:e.target.value,hillRows:undefined,distance:"",mode:e.target.value==="hills"?"distance":part.mode}),style:{width:"auto",fontSize:12,fontWeight:600,color:wt.dark,padding:"3px 6px",border:"0.5px solid var(--border-strong)",borderRadius:4}},
+        h("select",{value:part.type,onChange:e=>{const {hillRows,...rest}=part; onChange({...rest,type:e.target.value,distance:"",mode:e.target.value==="hills"?"distance":part.mode});},style:{width:"auto",fontSize:12,fontWeight:600,color:wt.dark,padding:"3px 6px",border:"0.5px solid var(--border-strong)",borderRadius:4}},
           Object.entries(WT).filter(([k])=>k!=="rest").map(([k,v])=>h("option",{key:k,value:k},v.label))
         ),
         !isHills&&h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)"}},
@@ -1133,24 +1133,30 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
 
   const savePlan=async(newPlan)=>{
     const wk=weekKey(weekOff);
-    await dbSet(`plans/${athlete.id}/weeks/${wk}`,newPlan);
-    setPlan(newPlan);
-    setEditPlan(false);
-    showToast("Plan saved");
+    try {
+      await dbSet(`plans/${athlete.id}/weeks/${wk}`,newPlan);
+      setPlan(newPlan);
+      setEditPlan(false);
+      showToast("Plan saved");
+    } catch(e) { showToast("Error saving plan: "+e.message,false); }
   };
   const saveReport=async(day,rep)=>{
     const wk=weekKey(weekOff);
     const existing=reports||{};
     const newReps={...existing,[day]:rep};
-    await dbSet(`reports/${athlete.id}/weeks/${wk}`,newReps);
-    setReports(newReps);
-    showToast("Report saved");
+    try {
+      await dbSet(`reports/${athlete.id}/weeks/${wk}`,newReps);
+      setReports(newReps);
+      showToast("Report saved");
+    } catch(e) { showToast("Error saving report: "+e.message,false); }
   };
   const updateAthlete=async(f)=>{
-    await dbSet(`athletes/${athlete.id}`,{name:f.name,level:f.level,age:f.age,pb5k:f.pb5k,pb10k:f.pb10k,pbHalf:f.pbHalf,pbMarathon:f.pbMarathon,events:f.events,notes:f.notes,groupId:f.groupId||""});
-    onUpdate({...athlete,...f});
-    setEditAth(false);
-    showToast("Profile updated");
+    try {
+      await dbSet(`athletes/${athlete.id}`,{name:f.name,level:f.level,age:f.age,pb5k:f.pb5k,pb10k:f.pb10k,pbHalf:f.pbHalf,pbMarathon:f.pbMarathon,events:f.events,notes:f.notes,groupId:f.groupId||""});
+      onUpdate({...athlete,...f});
+      setEditAth(false);
+      showToast("Profile updated");
+    } catch(e) { showToast("Error saving profile: "+e.message,false); }
   };
 
   const lvl=LVL[athlete.level]||LVL.recreational;
@@ -1289,9 +1295,11 @@ const AthleteHome = ({user,onSignOut}) => {
   const saveReport=async(day,rep)=>{
     const wk=weekKey(weekOff);
     const newReps={...reports,[day]:rep};
-    await dbSet(`reports/${user.uid}/weeks/${wk}`,newReps);
-    setReports(newReps);
-    showToast("Report submitted ✓");
+    try {
+      await dbSet(`reports/${user.uid}/weeks/${wk}`,newReps);
+      setReports(newReps);
+      showToast("Report submitted ✓");
+    } catch(e) { showToast("Error saving report: "+e.message,false); }
   };
 
   if(!profile)return h(Spinner);
@@ -1389,9 +1397,11 @@ const GroupsManager = ({groups,athletes,onAddGroup,onDeleteGroup,onSaveGroupPlan
 
   const saveGroupPlan=async(plan)=>{
     const wk=weekKey(weekOff);
-    await dbSet(`groupPlans/${editingGroup.id}/weeks/${wk}`,plan);
-    onSaveGroupPlan(editingGroup.id,wk,plan);
-    setEditingGroup(null);
+    try {
+      await dbSet(`groupPlans/${editingGroup.id}/weeks/${wk}`,plan);
+      onSaveGroupPlan(editingGroup.id,wk,plan);
+      setEditingGroup(null);
+    } catch(e) { alert("Error saving group plan: "+e.message); }
   };
 
   if(editingGroup)return h(Modal,{title:`Group plan — ${editingGroup.name} — ${weekLabel(weekOff)}`,onClose:()=>setEditingGroup(null),wide:true},
