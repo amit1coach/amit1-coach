@@ -227,7 +227,7 @@ const weekLabel = (off=0) => {const s=getWeekStart(off),e=new Date(s);e.setDate(
 const todayShort = () => DAYS[new Date().getDay()];
 const initials = n => n.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
 const ccColor  = p => p===null?{bg:"var(--neutral-bg)",color:"var(--text-muted)"}:p>=80?{bg:"var(--success-bg)",color:"var(--success-text)"}:p>=50?{bg:"var(--warning-bg)",color:"var(--warning-text)"}:{bg:"var(--danger-bg)",color:"var(--danger-text)"};
-const newPart  = (type="easy") => ({type,distance:"",pace:"",notes:"",_showPace:false});
+const newPart  = (type="easy") => ({type,mode:"distance",distance:"",duration:"",pace:"",notes:"",_showPace:false,_showKm:false});
 const newSess  = () => ({parts:[newPart()]});
 const newDay   = (rest=false,sessions=null) => ({restDay:rest,sessions:sessions||[newSess()]});
 const sessTotalKm = s => (s.parts||[]).reduce((t,p)=>t+(parseFloat(p.distance)||0),0);
@@ -240,12 +240,15 @@ const normalizePart = p => {
   if(!p||typeof p!=="object") return newPart();
   // hillRows might be nested inside the array items or at the top level
   const hillRows = p.hillRows || null;
-  return { 
-    type:p.type||"easy", 
-    distance:p.distance||"", 
-    pace:p.pace||"", 
-    notes:p.notes||"", 
+  return {
+    type:p.type||"easy",
+    mode:p.mode==="time"?"time":"distance",
+    distance:p.distance||"",
+    duration:p.duration||"",
+    pace:p.pace||"",
+    notes:p.notes||"",
     _showPace:!!(p.pace||p._showPace),
+    _showKm:!!(p.distance||p._showKm),
     ...(hillRows ? {hillRows: Array.isArray(hillRows) ? hillRows : Object.values(hillRows)} : {})
   };
 };
@@ -407,14 +410,19 @@ const HillPlanRows = ({part, onChange}) => {
 const PartEditor = ({part,onChange,onRemove,index,total}) => {
   const wt=WT[part.type]||WT.easy;
   const isHills = part.type==="hills";
+  const isTime = !isHills && part.mode==="time";
   return h("div",{style:{display:"flex",alignItems:"flex-start",gap:6,marginBottom:6,padding:"8px 10px",borderRadius:6,background:"var(--surface)",border:`0.5px solid ${wt.color}44`,borderLeft:`3px solid ${wt.color}`}},
     h("div",{style:{flex:1}},
-      h("div",{className:"row",style:{marginBottom:5}},
+      h("div",{className:"row",style:{marginBottom:5,flexWrap:"wrap"}},
         h("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-muted)",minWidth:50}},"Part "+(index+1)),
-        h("select",{value:part.type,onChange:e=>onChange({...part,type:e.target.value,hillRows:undefined,distance:""}),style:{width:"auto",fontSize:12,fontWeight:600,color:wt.dark,padding:"3px 6px",border:"0.5px solid var(--border-strong)",borderRadius:4}},
+        h("select",{value:part.type,onChange:e=>onChange({...part,type:e.target.value,hillRows:undefined,distance:"",mode:e.target.value==="hills"?"distance":part.mode}),style:{width:"auto",fontSize:12,fontWeight:600,color:wt.dark,padding:"3px 6px",border:"0.5px solid var(--border-strong)",borderRadius:4}},
           Object.entries(WT).filter(([k])=>k!=="rest").map(([k,v])=>h("option",{key:k,value:k},v.label))
         ),
-        !isHills&&h(Fragment,null,
+        !isHills&&h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)"}},
+          h("button",{onClick:()=>onChange({...part,mode:"distance"}),style:{padding:"3px 7px",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:!isTime?"var(--accent)":"var(--surface)",color:!isTime?"var(--accent-text)":"var(--text-muted)"}},"km"),
+          h("button",{onClick:()=>onChange({...part,mode:"time"}),style:{padding:"3px 7px",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:isTime?"var(--accent)":"var(--surface)",color:isTime?"var(--accent-text)":"var(--text-muted)"}},"time")
+        ),
+        !isHills&&!isTime&&h(Fragment,null,
           h("span",{style:{fontSize:11,color:"var(--text-muted)"}},"Total KMs"),
           h("input",{value:part.distance,onChange:e=>onChange({...part,distance:e.target.value}),placeholder:"0",style:{width:48,fontSize:12,padding:"3px 6px",fontFamily:"'DM Mono',monospace",border:"0.5px solid var(--border-strong)",borderRadius:4}}),
           part._showPace
@@ -425,6 +433,18 @@ const PartEditor = ({part,onChange,onRemove,index,total}) => {
                 h("button",{onClick:()=>onChange({...part,pace:"",_showPace:false}),style:{border:"none",background:"none",cursor:"pointer",color:"var(--border-strong)",fontSize:13,lineHeight:1}},"×")
               )
             : h("button",{onClick:()=>onChange({...part,_showPace:true}),className:"btn btns",style:{fontSize:11,padding:"3px 8px",color:"var(--text-muted)"}},"+  Add pace")
+        ),
+        !isHills&&isTime&&h(Fragment,null,
+          h("span",{style:{fontSize:11,color:"var(--text-muted)"}},"Duration"),
+          h("input",{value:part.duration||"",onChange:e=>onChange({...part,duration:e.target.value}),placeholder:"45",style:{width:44,fontSize:12,padding:"3px 6px",fontFamily:"'DM Mono',monospace",border:"0.5px solid var(--border-strong)",borderRadius:4}}),
+          h("span",{style:{fontSize:11,color:"var(--text-muted)"}},"min"),
+          part._showKm
+            ? h(Fragment,null,
+                h("input",{value:part.distance,onChange:e=>onChange({...part,distance:e.target.value}),placeholder:"0",style:{width:44,fontSize:12,padding:"3px 6px",fontFamily:"'DM Mono',monospace",border:"0.5px solid var(--border-strong)",borderRadius:4}}),
+                h("span",{style:{fontSize:11,color:"var(--text-muted)"}},"~km"),
+                h("button",{onClick:()=>onChange({...part,distance:"",_showKm:false}),style:{border:"none",background:"none",cursor:"pointer",color:"var(--border-strong)",fontSize:13,lineHeight:1}},"×")
+              )
+            : h("button",{onClick:()=>onChange({...part,_showKm:true}),className:"btn btns",style:{fontSize:11,padding:"3px 8px",color:"var(--text-muted)"}},"+  Add est. km")
         ),
         isHills&&h("span",{style:{fontSize:11,color:"var(--text-muted)",fontFamily:"monospace"}},part.distance?part.distance+" km total":"")
       ),
@@ -534,6 +554,24 @@ const AthleteForm = ({initial,groups,onSave,onCancel}) => {
 };
 
 // ── Per-type report fields ────────────────────────────────────────────────────
+// When a part is planned by time (planPart.mode==="time"), shows actual duration
+// plus a small reveal-on-click field for an estimated/accomplished km — the same
+// pattern already used for the pace toggle above.
+const ActualDistanceField = ({f,s,planPart,label="Actual distance (km)"}) => {
+  const isTime = planPart&&planPart.mode==="time";
+  if (!isTime) return h("div",null,h("label",{className:"lbl"},label),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"}));
+  return h("div",null,
+    h("label",{className:"lbl"},"Actual duration (min)"),
+    h("input",{type:"number",value:f.actualDuration||"",onChange:e=>s("actualDuration",e.target.value),placeholder:planPart.duration||"e.g. 45",className:"mono"}),
+    (f._showKm||f.actualDistance)
+      ? h("div",{style:{display:"flex",alignItems:"center",gap:4,marginTop:6}},
+          h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono",style:{width:70,fontSize:12,padding:"4px 6px"}}),
+          h("span",{style:{fontSize:11,color:"var(--text-muted)"}},"km"),
+          h("button",{onClick:()=>{s("_showKm",false);s("actualDistance","");},style:{border:"none",background:"none",cursor:"pointer",color:"var(--border-strong)",fontSize:13,lineHeight:1}},"×")
+        )
+      : h("button",{onClick:()=>s("_showKm",true),className:"btn btns",style:{fontSize:11,padding:"3px 8px",marginTop:6,color:"var(--text-muted)"}},"+  Add accomplished km")
+  );
+};
 const TypedRepFields = ({type, existing, onChange, planPart}) => {
   const [f, setF] = useState(()=>{
     const base = existing||{};
@@ -546,17 +584,17 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   const s = (k,v) => { const nx={...f,[k]:v}; setF(nx); onChange(nx); };
 
   if (type==="easy"||type==="recovery") return h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
-    h("div",null,h("label",{className:"lbl"},"Actual distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"})),
+    h(ActualDistanceField,{f,s,planPart}),
     h("div",null,h("label",{className:"lbl"},"Actual pace (mm:ss)"),h("input",{value:f.actualPace||"",onChange:e=>s("actualPace",e.target.value),placeholder:"e.g. 5:30",className:"mono"}))
   );
 
   if (type==="tempo") return h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
-    h("div",null,h("label",{className:"lbl"},"Actual total distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"})),
+    h(ActualDistanceField,{f,s,planPart,label:"Actual total distance (km)"}),
     h("div",null,h("label",{className:"lbl"},"Tempo pace (mm:ss)"),h("input",{value:f.tempoPace||"",onChange:e=>s("tempoPace",e.target.value),placeholder:"e.g. 4:40",className:"mono"}))
   );
 
   if (type==="interval") return h("div",{style:{marginBottom:8}},
-    h("div",null,h("label",{className:"lbl"},"Actual total distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono",style:{marginBottom:8}})),
+    h("div",{style:{marginBottom:8}},h(ActualDistanceField,{f,s,planPart,label:"Actual total distance (km)"})),
     h("div",null,
       h("label",{className:"lbl"},"Split times / averages (write freely)"),
       h("textarea",{value:f.splitNotes||"",onChange:e=>s("splitNotes",e.target.value),rows:4,placeholder:"e.g. 8×800m: 3:12, 3:10, 3:11, 3:09, 3:11, 3:10, 3:08, 3:07\nAvg: 3:10"})
@@ -567,7 +605,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
     const part2Type = f.part2Type||"speedgame";
     return h("div",{style:{marginBottom:8}},
       h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}},
-        h("div",null,h("label",{className:"lbl"},"Actual total distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"})),
+        h(ActualDistanceField,{f,s,planPart,label:"Actual total distance (km)"}),
         h("div",null,h("label",{className:"lbl"},"Total average pace (mm:ss)"),h("input",{value:f.avgPace||"",onChange:e=>s("avgPace",e.target.value),placeholder:"e.g. 5:10",className:"mono"}))
       ),
       h("div",{style:{marginBottom:10}},
@@ -602,7 +640,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   }
 
   if (type==="fartlek") return h("div",{style:{marginBottom:8}},
-    h("div",null,h("label",{className:"lbl"},"Actual total distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono",style:{marginBottom:8}})),
+    h("div",{style:{marginBottom:8}},h(ActualDistanceField,{f,s,planPart,label:"Actual total distance (km)"})),
     h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
       h("div",null,h("label",{className:"lbl"},"Faster pace (mm:ss)"),h("input",{value:f.fasterPace||"",onChange:e=>s("fasterPace",e.target.value),placeholder:"e.g. 4:10",className:"mono"})),
       h("div",null,h("label",{className:"lbl"},"Transition pace (mm:ss)"),h("input",{value:f.transitionPace||"",onChange:e=>s("transitionPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
@@ -689,7 +727,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
 
   // Default fallback
   return h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
-    h("div",null,h("label",{className:"lbl"},"Actual distance (km)"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"})),
+    h(ActualDistanceField,{f,s,planPart}),
     h("div",null,h("label",{className:"lbl"},"Actual pace (mm:ss)"),h("input",{value:f.actualPace||"",onChange:e=>s("actualPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
   );
 };
@@ -701,7 +739,7 @@ const PartRepForm = ({part, index, total, existing, onChange}) => {
 
   return h("div",{style:{padding:"8px 10px", marginBottom:6, borderRadius:6, background:"var(--surface)", borderLeft:`3px solid ${wt.color}`, border:`0.5px solid ${wt.color}33`, borderLeft:`3px solid ${wt.color}`}},
     h("div",{style:{fontSize:11, fontWeight:700, color:wt.dark, marginBottom:6}},
-      (total>1?"Part "+(index+1)+": ":"")+wt.label+(part.distance?" · Planned: "+part.distance+"km":"")
+      (total>1?"Part "+(index+1)+": ":"")+wt.label+(part.mode==="time"?(part.duration?" · Planned: "+part.duration+" min":""):(part.distance?" · Planned: "+part.distance+"km":""))
     ),
     h(TypedRepFields,{type:part.type, existing:typeData, planPart:part, onChange:td=>{ setTypeData(td); emit(td); }})
   );
@@ -917,7 +955,9 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                           h("span",{className:"wtb",style:{background:wt.bg,color:wt.dark,border:`0.5px solid ${wt.color}44`,fontSize:11}},wt.label),
                           part.type==="hills"&&hillRowsSummary(part)
                             ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},hillRowsSummary(part))
-                            : part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
+                            : part.mode==="time"
+                              ? part.duration&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},part.duration+" min"+(part.distance?" · ~"+part.distance+"km":""))
+                              : part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
                           part.type!=="hills"&&part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"var(--text-muted)"}},"@ "+part.pace+"/km")
                         ),
                         part.notes&&h("div",{style:{fontSize:11,color:"var(--text-muted2)"}},part.notes)
