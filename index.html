@@ -1029,7 +1029,10 @@ const dayActualKm = r => {
 };
 
 const printWeeklySummary = (athlete, plan, reports, weekOff) => {
-  const wl = weekLabel(weekOff);
+  const weekStart = getWeekStart(weekOff);
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+  const dateStamp = weekKey(weekOff); // YYYY-MM-DD, filename-safe
+  const dateRangeFull = `${weekStart.toLocaleDateString("en-GB",{day:"numeric",month:"short"})} – ${weekEnd.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`;
   const totalPlanned = DAYS.reduce((s,d)=>s+dayTotalKm(plan[d]),0);
   const totalActual = DAYS.reduce((s,day)=>s+dayActualKm(reports[day]),0);
   const workoutDays = DAYS.filter(d=>!dayIsRest(plan[d]));
@@ -1047,9 +1050,15 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
     const sessions=(d?.sessions||[]);
     const plannedKm = dayTotalKm(d).toFixed(1);
     const actualKm = r?.sessions ? dayActualKm(r).toFixed(1) : "–";
-    const status = r?.sessions ? (r.sessions[0]?.status||"–") : "No report";
-    const effort = r?.sessions ? (r.sessions[0]?.effort||"–") : "–";
-    const notes = r?.sessions ? (r.sessions[0]?.notes||"") : "";
+    const status = r?.sessions
+      ? sessions.map((sess,si)=>SS[r.sessions[si]?.status]?.label.replace(/^[✓~✕]\s*/,"")||"–").join(" / ")
+      : "No report";
+    const effort = r?.sessions
+      ? sessions.map((sess,si)=>r.sessions[si]?.effort?r.sessions[si].effort+"/10":"–").join(" / ")
+      : "–";
+    const notesList = r?.sessions
+      ? sessions.map((sess,si)=>r.sessions[si]?.notes).map((n,i)=>n?{i,n}:null).filter(Boolean)
+      : [];
     const sleep = r?.sleep ? r.sleep+"/5" : "–";
     const stress = r?.stress ? r.stress+"/5" : "–";
     const stressIcon = r?.stress ? stressEmoji(r.stress) : "🧠";
@@ -1066,14 +1075,14 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
       <td style="font-family:monospace">${plannedKm} km</td>
       <td style="font-family:monospace">${actualKm} km</td>
       <td>${status}</td>
-      <td>${effort}/10</td>
+      <td>${effort}</td>
       <td style="font-family:monospace">${perf}</td>
       <td>😴${sleep} ${stressIcon}${stress}</td>
-    </tr>${notes?`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">"${notes}"</td></tr>`:""}`;
+    </tr>${notesList.map(({i,n})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">${sessions.length>1?`Session ${i+1}: `:""}"${n}"</td></tr>`).join("")}`;
   }).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Weekly Summary — ${athlete.name}</title>
+  <title>Weekly Summary - ${athlete.name} - ${dateStamp}</title>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 800px; margin: 40px auto; color: var(--text); font-size: 14px; }
     h1 { font-size: 22px; margin-bottom: 4px; }
@@ -1090,8 +1099,8 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
     @media print { body { margin: 20px; } }
   </style></head><body>
   <div style="color:var(--accent);font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">AMIT 1 — Running Coach</div>
-  <h1>${athlete.name} — Weekly Summary</h1>
-  <div class="subtitle">${wl} · ${athlete.events||""} · 5K PB: ${athlete.pb5k||"–"}</div>
+  <h1>${athlete.name} — Weekly Summary — ${dateRangeFull}</h1>
+  <div class="subtitle">${athlete.events||""} · 5K PB: ${athlete.pb5k||"–"}</div>
   <div class="summary-boxes">
     <div class="box"><div class="box-label">Planned volume</div><div class="box-value">${totalPlanned.toFixed(0)} km</div></div>
     <div class="box"><div class="box-label">Actual volume</div><div class="box-value">${totalActual.toFixed(0)} km</div></div>
