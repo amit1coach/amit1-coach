@@ -172,8 +172,7 @@ const dbGetPlan = async (athleteId, off=0) => {
       const found = docList.find(d => d.id === tryKey);
       if (found) return found.data;
     }
-    docList.sort((a,b) => b.id.localeCompare(a.id));
-    return docList[0]?.data || null;
+    return null;
   } catch(e) { console.error("dbGetPlan error:", e); return null; }
 };
 
