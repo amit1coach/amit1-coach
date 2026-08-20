@@ -1833,7 +1833,10 @@ const HERO_SILHOUETTE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAzQAAANkC
 
 // Shared warm-palette track curve + lane numbers, reused as a decorative
 // background on the sign-in screen and (without the silhouette) app-wide.
-const TrackPatternSvg = ({preserveAspectRatio="xMaxYMax slice"}) => h("svg",{width:"100%",height:"100%",viewBox:"0 0 360 560",preserveAspectRatio,style:{position:"absolute",inset:0},"aria-hidden":"true"},
+// Fixed-size, corner-anchored — never stretched/"cover"-scaled to fill the
+// viewport, so it renders identically regardless of window shape (a portrait
+// pattern force-scaled to cover a wide/short window zooms in dramatically).
+const TrackPatternSvg = () => h("svg",{viewBox:"0 0 360 560",style:{position:"absolute",right:0,bottom:0,width:"min(480px, 100vw)",height:"auto",maxHeight:"100%"},"aria-hidden":"true"},
   h("defs",null,h("radialGradient",{id:"trackGlow",cx:"50%",cy:"50%",r:"50%"},
     h("stop",{offset:"0%","stop-color":"#FFE3E5","stop-opacity":"0.9"}),
     h("stop",{offset:"100%","stop-color":"#FFE3E5","stop-opacity":"0"})
@@ -1884,7 +1887,7 @@ const LoginScreen = ({onLogin}) => {
 
   return h("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem",position:"relative",overflow:"hidden",
     background:"linear-gradient(180deg,#FFF3E0 0%,#FCCBB4 26%,#F0899A 58%,#C85678 100%)"}},
-    h(TrackPatternSvg,{preserveAspectRatio:"xMidYMid slice"}),
+    h(TrackPatternSvg,null),
     h("img",{src:HERO_SILHOUETTE,alt:"",style:{position:"absolute",right:"-4%",top:"2%",width:"58%",maxWidth:340,opacity:0.94,pointerEvents:"none"}}),
     h("div",{style:{position:"absolute",top:"1rem",right:"1rem",zIndex:2}},h(ThemeToggle)),
     h("div",{className:"login-box",style:{position:"relative",zIndex:1,background:"rgba(122,33,69,0.45)",backdropFilter:"blur(6px)",border:"0.5px solid rgba(255,255,255,0.3)"}},
