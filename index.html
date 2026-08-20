@@ -1065,7 +1065,10 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
     const types = sessions.map(s=>(s.parts||[]).map(p=>WT[p.type]?.label||p.type).join(" + ")).join(" / ");
     const perf = sessions.map((sess,si)=>{
       const rep = r?.sessions?.[si];
-      const paceStr = (repSummary(rep,sess.parts)||[]).map(l=>l.detail).filter(Boolean).join(" + ");
+      const paceStr = (repSummary(rep,sess.parts)||[]).map(l=>{
+        const distStr = l.dist>0 ? l.dist.toFixed(1)+"km " : "";
+        return (distStr+l.detail).trim();
+      }).filter(Boolean).join(" + ");
       const hrStr = rep?.hr ? rep.hr+"bpm" : "";
       return [paceStr,hrStr].filter(Boolean).join(" · ");
     }).filter(Boolean).join(" / ") || "–";
