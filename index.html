@@ -1084,7 +1084,13 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
   <title>Weekly Summary - ${athlete.name} - ${dateStamp}</title>
   <style>
-    body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 800px; margin: 40px auto; color: var(--text); font-size: 14px; }
+    :root {
+      --bg:#F4F6F9; --surface:#fff; --surface-alt:#F7F8FA;
+      --text:#0F1117; --text-muted:#8A9BB0; --text-muted2:#4A5568;
+      --border:#E2E8F0; --border-strong:#CBD5E0;
+      --accent:#F5A623; --neutral-bg:#F0F3F7;
+    }
+    body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 800px; margin: 40px auto; color: var(--text); font-size: 14px; background: var(--bg); }
     h1 { font-size: 22px; margin-bottom: 4px; }
     .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; }
     .summary-boxes { display: flex; gap: 16px; margin-bottom: 24px; }
