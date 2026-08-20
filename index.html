@@ -1020,13 +1020,18 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
 };
 
 // ── Athlete Detail (coach view) ───────────────────────────────────────────────
+// Real daily total: main session(s) + warm-up + cool-down, matching what the athlete sees as "Total" in their report
+const dayActualKm = r => {
+  if (!r?.sessions) return 0;
+  if (r.totalKm!=null && r.totalKm!=="") return parseFloat(r.totalKm)||0;
+  const mainKm = r.sessions.reduce((s,rep)=>s+(parseFloat(rep.actualDistance)||0),0);
+  return mainKm + (parseFloat(r.wu)||0) + (parseFloat(r.cd)||0);
+};
+
 const printWeeklySummary = (athlete, plan, reports, weekOff) => {
   const wl = weekLabel(weekOff);
   const totalPlanned = DAYS.reduce((s,d)=>s+dayTotalKm(plan[d]),0);
-  const totalActual = DAYS.reduce((s,day)=>{
-    const r=reports[day]; if(!r?.sessions) return s;
-    return s+r.sessions.reduce((ss,rep)=>ss+(parseFloat(rep.actualDistance)||0),0);
-  },0);
+  const totalActual = DAYS.reduce((s,day)=>s+dayActualKm(reports[day]),0);
   const workoutDays = DAYS.filter(d=>!dayIsRest(plan[d]));
   const doneDays = workoutDays.filter(d=>reports[d]?.sessions?.some(s=>s.status==="done"||s.status==="modified"));
   const allEfforts = DAYS.flatMap(d=>(reports[d]?.sessions||[]).map(s=>parseFloat(s.effort)||0)).filter(Boolean);
@@ -1038,10 +1043,10 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
 
   const dayRows = DAYS.map(day=>{
     const d=plan[day]; const r=reports[day];
-    if(dayIsRest(d)) return `<tr><td><b>${day}</b></td><td colspan="6" style="color:var(--text-muted)">Rest / Off</td></tr>`;
+    if(dayIsRest(d)) return `<tr><td><b>${day}</b></td><td colspan="7" style="color:var(--text-muted)">Rest / Off</td></tr>`;
     const sessions=(d?.sessions||[]);
     const plannedKm = dayTotalKm(d).toFixed(1);
-    const actualKm = r?.sessions ? r.sessions.reduce((s,rep)=>s+(parseFloat(rep.actualDistance)||0),0).toFixed(1) : "–";
+    const actualKm = r?.sessions ? dayActualKm(r).toFixed(1) : "–";
     const status = r?.sessions ? (r.sessions[0]?.status||"–") : "No report";
     const effort = r?.sessions ? (r.sessions[0]?.effort||"–") : "–";
     const notes = r?.sessions ? (r.sessions[0]?.notes||"") : "";
@@ -1049,6 +1054,12 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
     const stress = r?.stress ? r.stress+"/5" : "–";
     const stressIcon = r?.stress ? stressEmoji(r.stress) : "🧠";
     const types = sessions.map(s=>(s.parts||[]).map(p=>WT[p.type]?.label||p.type).join(" + ")).join(" / ");
+    const perf = sessions.map((sess,si)=>{
+      const rep = r?.sessions?.[si];
+      const paceStr = (repSummary(rep,sess.parts)||[]).map(l=>l.detail).filter(Boolean).join(" + ");
+      const hrStr = rep?.hr ? rep.hr+"bpm" : "";
+      return [paceStr,hrStr].filter(Boolean).join(" · ");
+    }).filter(Boolean).join(" / ") || "–";
     return `<tr>
       <td><b>${day}</b></td>
       <td>${types}</td>
@@ -1056,8 +1067,9 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
       <td style="font-family:monospace">${actualKm} km</td>
       <td>${status}</td>
       <td>${effort}/10</td>
+      <td style="font-family:monospace">${perf}</td>
       <td>😴${sleep} ${stressIcon}${stress}</td>
-    </tr>${notes?`<tr><td></td><td colspan="6" style="color:var(--text-muted2);font-style:italic;font-size:12px">"${notes}"</td></tr>`:""}`;
+    </tr>${notes?`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">"${notes}"</td></tr>`:""}`;
   }).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -1090,7 +1102,7 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
   </div>
   <table>
     <thead><tr>
-      <th>Day</th><th>Session</th><th>Planned</th><th>Actual</th><th>Status</th><th>Effort</th><th>Wellbeing</th>
+      <th>Day</th><th>Session</th><th>Planned</th><th>Actual</th><th>Status</th><th>Effort</th><th>Pace / HR</th><th>Wellbeing</th>
     </tr></thead>
     <tbody>${dayRows}</tbody>
   </table>
