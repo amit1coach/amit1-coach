@@ -1854,7 +1854,7 @@ const TrackPatternSvg = () => h("svg",{viewBox:"0 0 360 560",style:{position:"ab
 );
 
 // Fixed page-wide backdrop for the signed-in app (no silhouette — that stays sign-in only)
-const AppBackdrop = () => h("div",{style:{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none",
+const AppBackdrop = () => h("div",{style:{position:"fixed",inset:0,zIndex:-1,overflow:"hidden",pointerEvents:"none",
   background:"linear-gradient(180deg,#FFF3E0 0%,#FCCBB4 26%,#F0899A 58%,#C85678 100%)"}},
   h(TrackPatternSvg,null)
 );
