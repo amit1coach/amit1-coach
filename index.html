@@ -310,7 +310,7 @@ const StatCard = ({label,value,accent}) =>
 const Toast = ({msg,ok}) =>
   h("div",{className:"toast",style:{background:ok?"var(--success-bg)":"var(--danger-bg)",color:ok?"var(--success-text)":"var(--danger-text)",border:`0.5px solid ${ok?"var(--success)":"var(--danger)"}`}},msg);
 const Spinner = () => h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"3rem"}},h("div",{className:"spin"}));
-const ThemeToggle = () => {
+const ThemeToggle = ({style}) => {
   const [theme,setTheme]=useState(()=>document.documentElement.getAttribute("data-theme")||"light");
   const toggle=()=>{
     const next=theme==="dark"?"light":"dark";
@@ -318,7 +318,7 @@ const ThemeToggle = () => {
     localStorage.setItem("theme",next);
     setTheme(next);
   };
-  return h("button",{className:"themebtn",onClick:toggle,title:theme==="dark"?"Switch to light mode":"Switch to dark mode","aria-label":"Toggle dark mode"},theme==="dark"?"☀️":"🌙");
+  return h("button",{className:"themebtn",onClick:toggle,title:theme==="dark"?"Switch to light mode":"Switch to dark mode","aria-label":"Toggle dark mode",style},theme==="dark"?"☀️":"🌙");
 };
 const Modal = ({title,onClose,children,wide}) =>
   h("div",{className:"mo",onClick:e=>{if(e.target===e.currentTarget)onClose();}},
@@ -1889,8 +1889,8 @@ const LoginScreen = ({onLogin}) => {
     background:"linear-gradient(180deg,#FFF3E0 0%,#FCCBB4 26%,#F0899A 58%,#C85678 100%)"}},
     h(TrackPatternSvg,null),
     h("img",{src:HERO_SILHOUETTE,alt:"",style:{position:"absolute",right:"-4%",top:"2%",width:"58%",maxWidth:340,opacity:0.94,pointerEvents:"none"}}),
-    h("div",{style:{position:"absolute",top:"1rem",right:"1rem",zIndex:2}},h(ThemeToggle)),
-    h("div",{className:"login-box",style:{position:"relative",zIndex:1,background:"rgba(122,33,69,0.45)",backdropFilter:"blur(6px)",border:"0.5px solid rgba(255,255,255,0.3)"}},
+    h("div",{style:{position:"absolute",top:"1rem",right:"1rem",zIndex:2}},h(ThemeToggle,{style:{background:"rgba(255,255,255,0.2)",border:"0.5px solid rgba(255,255,255,0.4)",color:"#fff"}})),
+    h("div",{className:"login-box",style:{position:"relative",zIndex:1,background:"rgba(122,33,69,0.62)",border:"0.5px solid rgba(255,255,255,0.3)"}},
       h("div",{style:{textAlign:"center",marginBottom:28}},
         h("div",{style:{fontSize:11,fontWeight:700,color:"#FFE0E5",letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:6}},"Amit 1"),
         h("div",{style:{fontSize:24,fontWeight:700,marginBottom:4,color:"#fff"}},"Running Coach"),
