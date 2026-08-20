@@ -1211,6 +1211,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
   const group=groups.find(g=>g.id===athlete.groupId);
 
   return h("div",{style:{maxWidth:760,margin:"0 auto",padding:"1.5rem 1rem"}},
+    h(AthleteSilhouetteAccent,{name:athlete.name}),
     toast&&h(Toast,{msg:toast.msg,ok:toast.ok}),
     h("div",{style:{display:"flex",alignItems:"flex-start",gap:14,marginBottom:"1.5rem"}},
       h("button",{className:"btn",onClick:onBack,style:{marginTop:2,flexShrink:0}},"← Back"),
@@ -1353,6 +1354,7 @@ const AthleteHome = ({user,onSignOut}) => {
   },0);
 
   return h("div",{style:{maxWidth:680,margin:"0 auto",padding:"1.5rem 1rem"}},
+    h(AthleteSilhouetteAccent,{name:profile.name}),
     toast&&h(Toast,{msg:toast.msg,ok:toast.ok}),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1.5rem"}},
       h("div",{style:{display:"flex",alignItems:"center",gap:12}},
@@ -1858,6 +1860,12 @@ const AppBackdrop = () => h("div",{style:{position:"fixed",inset:0,zIndex:-1,ove
   background:"linear-gradient(180deg,#FFF3E0 0%,#FCCBB4 26%,#F0899A 58%,#C85678 100%)"}},
   h(TrackPatternSvg,null)
 );
+
+// Small silhouette accent shown only on Hadar's own screens (top right, subtle)
+const AthleteSilhouetteAccent = ({name}) => {
+  if (!name || !name.trim().toLowerCase().startsWith("hadar")) return null;
+  return h("img",{src:HERO_SILHOUETTE,alt:"",style:{position:"fixed",top:70,right:"-2%",width:170,opacity:0.35,pointerEvents:"none",zIndex:1}});
+};
 
 const LoginScreen = ({onLogin}) => {
   const [email,setEmail]=useState("");
