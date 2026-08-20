@@ -228,7 +228,7 @@ const initials = n => n.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(
 const ccColor  = p => p===null?{bg:"var(--neutral-bg)",color:"var(--text-muted)"}:p>=80?{bg:"var(--success-bg)",color:"var(--success-text)"}:p>=50?{bg:"var(--warning-bg)",color:"var(--warning-text)"}:{bg:"var(--danger-bg)",color:"var(--danger-text)"};
 const newPart  = (type="easy") => ({type,mode:"distance",distance:"",duration:"",pace:"",notes:"",_showPace:false,_showKm:false});
 const newSess  = () => ({parts:[newPart()]});
-const newDay   = (rest=false,sessions=null) => ({restDay:rest,sessions:sessions||[newSess()]});
+const newDay   = (rest=false,sessions=null,wu="",cd="") => ({restDay:rest,sessions:sessions||[newSess()],wu,cd});
 const sessTotalKm = s => (s.parts||[]).reduce((t,p)=>t+(parseFloat(p.distance)||0),0);
 const dayTotalKm  = d => (d?.sessions||[]).reduce((t,s)=>t+sessTotalKm(s),0);
 const dayIsRest   = d => !d||d.restDay||(d.sessions||[]).length===0;
@@ -262,17 +262,18 @@ const normalizeSess = s => {
 };
 const normalizeDay = d => {
   if(!d||typeof d!=="object") return newDay(true,[]);
+  const wu=d.wu||"", cd=d.cd||"";
   // explicit rest
-  if(d.restDay===true||(Array.isArray(d.sessions)&&d.sessions.length===0&&d.restDay!==false)) return newDay(true,[]);
+  if(d.restDay===true||(Array.isArray(d.sessions)&&d.sessions.length===0&&d.restDay!==false)) return newDay(true,[],wu,cd);
   // old format: type directly on day
-  if(d.type==="rest") return newDay(true,[]);
-  if(d.type) return newDay(false,[{parts:[normalizePart(d)]}]);
+  if(d.type==="rest") return newDay(true,[],wu,cd);
+  if(d.type) return newDay(false,[{parts:[normalizePart(d)]}],wu,cd);
   // new format: has sessions array
   if(Array.isArray(d.sessions)) {
-    if(d.sessions.length===0) return newDay(true,[]);
-    return { restDay:false, sessions:d.sessions.map(normalizeSess) };
+    if(d.sessions.length===0) return newDay(true,[],wu,cd);
+    return { restDay:false, sessions:d.sessions.map(normalizeSess), wu, cd };
   }
-  return newDay(true,[]);
+  return newDay(true,[],wu,cd);
 };
 const migratePlan = plan => {
   if(!plan||typeof plan!=="object") return {};
@@ -491,6 +492,7 @@ const PlanEditor = ({plan,onSave,onCancel,groupName}) => {
     return p;
   });
   const toggleRest=day=>setLocal(p=>({...p,[day]:{...p[day],restDay:!p[day].restDay,sessions:p[day].restDay?[newSess()]:[]}}));
+  const setWuCd   =(day,field,val)=>setLocal(p=>({...p,[day]:{...p[day],[field]:val}}));
   const addSess   =day=>setLocal(p=>({...p,[day]:{...p[day],sessions:[...p[day].sessions,newSess()]}}));
   const updSess   =(day,i,s)=>setLocal(p=>{const ss=[...p[day].sessions];ss[i]=s;return{...p,[day]:{...p[day],sessions:ss}};});
   const remSess   =(day,i)=>setLocal(p=>{const ss=p[day].sessions.filter((_,idx)=>idx!==i);return{...p,[day]:{...p[day],sessions:ss}};});
@@ -512,7 +514,17 @@ const PlanEditor = ({plan,onSave,onCancel,groupName}) => {
           ),
           !isRest&&h("button",{onClick:()=>addSess(day),className:"btn btns",style:{marginLeft:"auto"}},"+  Add session")
         ),
-        !isRest&&d.sessions.map((sess,i)=>h(SessionEditor,{key:i,session:sess,index:i,total:d.sessions.length,onChange:s=>updSess(day,i,s),onRemove:()=>remSess(day,i)}))
+        !isRest&&d.sessions.map((sess,i)=>h(SessionEditor,{key:i,session:sess,index:i,total:d.sessions.length,onChange:s=>updSess(day,i,s),onRemove:()=>remSess(day,i)})),
+        !isRest&&h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10,padding:"10px 12px",background:"var(--info-bg)",borderRadius:8,border:"0.5px solid var(--border-strong)"}},
+          h("div",null,
+            h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
+            h("input",{type:"number",value:d.wu||"",onChange:e=>setWuCd(day,"wu",e.target.value),placeholder:"e.g. 3",className:"mono",step:"0.1"})
+          ),
+          h("div",null,
+            h("label",{className:"lbl"},"Cool down KMs inc. strides or accs"),
+            h("input",{type:"number",value:d.cd||"",onChange:e=>setWuCd(day,"cd",e.target.value),placeholder:"e.g. 2",className:"mono",step:"0.1"})
+          )
+        )
       );
     }),
     h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}},
@@ -845,7 +857,7 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
           h("input",{type:"number",value:wu,onChange:e=>setWu(e.target.value),placeholder:"e.g. 3",className:"mono",step:"0.1"})
         ),
         h("div",null,
-          h("label",{className:"lbl"},"Cool down KMs"),
+          h("label",{className:"lbl"},"Cool down KMs inc. strides or accs"),
           h("input",{type:"number",value:cd,onChange:e=>setCd(e.target.value),placeholder:"e.g. 2",className:"mono",step:"0.1"})
         )
       )
