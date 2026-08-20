@@ -230,7 +230,7 @@ const newPart  = (type="easy") => ({type,mode:"distance",distance:"",duration:""
 const newSess  = () => ({parts:[newPart()]});
 const newDay   = (rest=false,sessions=null,wu="",cd="") => ({restDay:rest,sessions:sessions||[newSess()],wu,cd});
 const sessTotalKm = s => (s.parts||[]).reduce((t,p)=>t+(parseFloat(p.distance)||0),0);
-const dayTotalKm  = d => (d?.sessions||[]).reduce((t,s)=>t+sessTotalKm(s),0);
+const dayTotalKm  = d => (d?.sessions||[]).reduce((t,s)=>t+sessTotalKm(s),0) + (parseFloat(d?.wu)||0) + (parseFloat(d?.cd)||0);
 const dayIsRest   = d => !d||d.restDay||(d.sessions||[]).length===0;
 const sessFirstType = s => s.parts&&s.parts.length>0?s.parts[0].type:"easy";
 const stressEmoji = v => { v=parseInt(v); return v<=2?"🙂":v===3?"😐":"😣"; };
@@ -981,7 +981,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                         part.notes&&h("div",{style:{fontSize:11,color:"var(--text-muted2)"}},part.notes)
                       );
                     }),
-                    sessions.length===1&&km>0&&h("div",{style:{fontSize:11,color:"var(--text-muted)",marginTop:4}},"Total KMs: ",h("strong",{className:"mono"},km.toFixed(1)+" km")),
+                    sessions.length===1&&dailyKm>0&&h("div",{style:{fontSize:11,color:"var(--text-muted)",marginTop:4}},"Total KMs: ",h("strong",{className:"mono"},dailyKm.toFixed(1)+" km")),
                     isCoach&&rep&&h("div",{style:{marginTop:6,paddingTop:6,borderTop:"0.5px solid var(--neutral-bg)"}},
                       h("div",{style:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:4}},
                         h("span",{style:{fontWeight:700,fontSize:12,color:SS[rep.status]?.color}},SS[rep.status]?.label),
