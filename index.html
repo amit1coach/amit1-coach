@@ -227,10 +227,10 @@ const todayShort = () => DAYS[new Date().getDay()];
 const initials = n => n.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
 const ccColor  = p => p===null?{bg:"var(--neutral-bg)",color:"var(--text-muted)"}:p>=80?{bg:"var(--success-bg)",color:"var(--success-text)"}:p>=50?{bg:"var(--warning-bg)",color:"var(--warning-text)"}:{bg:"var(--danger-bg)",color:"var(--danger-text)"};
 const newPart  = (type="easy") => ({type,mode:"distance",distance:"",duration:"",pace:"",notes:"",_showPace:false,_showKm:false});
-const newSess  = () => ({parts:[newPart()]});
-const newDay   = (rest=false,sessions=null,wu="",cd="") => ({restDay:rest,sessions:sessions||[newSess()],wu,cd});
-const sessTotalKm = s => (s.parts||[]).reduce((t,p)=>t+(parseFloat(p.distance)||0),0);
-const dayTotalKm  = d => (d?.sessions||[]).reduce((t,s)=>t+sessTotalKm(s),0) + (parseFloat(d?.wu)||0) + (parseFloat(d?.cd)||0);
+const newSess  = () => ({parts:[newPart()],wu:"",cd:""});
+const newDay   = (rest=false,sessions=null) => ({restDay:rest,sessions:sessions||[newSess()]});
+const sessTotalKm = s => (parseFloat(s?.wu)||0) + (s?.parts||[]).reduce((t,p)=>t+(parseFloat(p.distance)||0),0) + (parseFloat(s?.cd)||0);
+const dayTotalKm  = d => (d?.sessions||[]).reduce((t,s)=>t+sessTotalKm(s),0);
 const dayIsRest   = d => !d||d.restDay||(d.sessions||[]).length===0;
 const sessFirstType = s => s.parts&&s.parts.length>0?s.parts[0].type:"easy";
 const stressEmoji = v => { v=parseInt(v); return v<=2?"🙂":v===3?"😐":"😣"; };
@@ -255,25 +255,32 @@ const normalizePart = p => {
 const normalizeSess = s => {
   if(!s||typeof s!=="object") return newSess();
   // has parts array
-  if(Array.isArray(s.parts)&&s.parts.length>0) return { parts:s.parts.map(normalizePart) };
+  if(Array.isArray(s.parts)&&s.parts.length>0) return { parts:s.parts.map(normalizePart), wu:s.wu||"", cd:s.cd||"" };
   // old format with type directly on session
-  if(s.type) return { parts:[normalizePart(s)] };
+  if(s.type) return { parts:[normalizePart(s)], wu:s.wu||"", cd:s.cd||"" };
   return newSess();
+};
+// Old plans stored wu/cd once per day; migrate that onto the first session so
+// existing data still shows up after the move to per-session wu/cd.
+const applyLegacyDayWuCd = (sessions,legacyWu,legacyCd) => {
+  if(!(legacyWu||legacyCd)||sessions.length===0) return sessions;
+  const [first,...rest]=sessions;
+  return [{...first,wu:first.wu||legacyWu,cd:first.cd||legacyCd},...rest];
 };
 const normalizeDay = d => {
   if(!d||typeof d!=="object") return newDay(true,[]);
-  const wu=d.wu||"", cd=d.cd||"";
+  const legacyWu=d.wu||"", legacyCd=d.cd||"";
   // explicit rest
-  if(d.restDay===true||(Array.isArray(d.sessions)&&d.sessions.length===0&&d.restDay!==false)) return newDay(true,[],wu,cd);
+  if(d.restDay===true||(Array.isArray(d.sessions)&&d.sessions.length===0&&d.restDay!==false)) return newDay(true,[]);
   // old format: type directly on day
-  if(d.type==="rest") return newDay(true,[],wu,cd);
-  if(d.type) return newDay(false,[{parts:[normalizePart(d)]}],wu,cd);
+  if(d.type==="rest") return newDay(true,[]);
+  if(d.type) return { restDay:false, sessions:applyLegacyDayWuCd([{parts:[normalizePart(d)],wu:"",cd:""}],legacyWu,legacyCd) };
   // new format: has sessions array
   if(Array.isArray(d.sessions)) {
-    if(d.sessions.length===0) return newDay(true,[],wu,cd);
-    return { restDay:false, sessions:d.sessions.map(normalizeSess), wu, cd };
+    if(d.sessions.length===0) return newDay(true,[]);
+    return { restDay:false, sessions:applyLegacyDayWuCd(d.sessions.map(normalizeSess),legacyWu,legacyCd) };
   }
-  return newDay(true,[],wu,cd);
+  return newDay(true,[]);
 };
 const migratePlan = plan => {
   if(!plan||typeof plan!=="object") return {};
@@ -476,7 +483,15 @@ const SessionEditor = ({session,onChange,onRemove,index,total}) => {
         total>1&&h("button",{onClick:onRemove,style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:18,lineHeight:1}},"×")
       )
     ),
-    parts.map((part,i)=>h(PartEditor,{key:i,part,index:i,total:parts.length,onChange:p=>updatePart(i,p),onRemove:()=>removePart(i)}))
+    h("div",{style:{marginBottom:8,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)"}},
+      h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
+      h("input",{type:"number",value:session.wu||"",onChange:e=>onChange({...session,wu:e.target.value}),placeholder:"e.g. 3",className:"mono",step:"0.1",style:{maxWidth:120}})
+    ),
+    parts.map((part,i)=>h(PartEditor,{key:i,part,index:i,total:parts.length,onChange:p=>updatePart(i,p),onRemove:()=>removePart(i)})),
+    h("div",{style:{marginTop:4,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)"}},
+      h("label",{className:"lbl"},"Cool down KMs inc. strides or accs"),
+      h("input",{type:"number",value:session.cd||"",onChange:e=>onChange({...session,cd:e.target.value}),placeholder:"e.g. 2",className:"mono",step:"0.1",style:{maxWidth:120}})
+    )
   );
 };
 
@@ -492,7 +507,6 @@ const PlanEditor = ({plan,onSave,onCancel,groupName}) => {
     return p;
   });
   const toggleRest=day=>setLocal(p=>({...p,[day]:{...p[day],restDay:!p[day].restDay,sessions:p[day].restDay?[newSess()]:[]}}));
-  const setWuCd   =(day,field,val)=>setLocal(p=>({...p,[day]:{...p[day],[field]:val}}));
   const addSess   =day=>setLocal(p=>({...p,[day]:{...p[day],sessions:[...p[day].sessions,newSess()]}}));
   const updSess   =(day,i,s)=>setLocal(p=>{const ss=[...p[day].sessions];ss[i]=s;return{...p,[day]:{...p[day],sessions:ss}};});
   const remSess   =(day,i)=>setLocal(p=>{const ss=p[day].sessions.filter((_,idx)=>idx!==i);return{...p,[day]:{...p[day],sessions:ss}};});
@@ -514,17 +528,7 @@ const PlanEditor = ({plan,onSave,onCancel,groupName}) => {
           ),
           !isRest&&h("button",{onClick:()=>addSess(day),className:"btn btns",style:{marginLeft:"auto"}},"+  Add session")
         ),
-        !isRest&&d.sessions.map((sess,i)=>h(SessionEditor,{key:i,session:sess,index:i,total:d.sessions.length,onChange:s=>updSess(day,i,s),onRemove:()=>remSess(day,i)})),
-        !isRest&&h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10,padding:"10px 12px",background:"var(--info-bg)",borderRadius:8,border:"0.5px solid var(--border-strong)"}},
-          h("div",null,
-            h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
-            h("input",{type:"number",value:d.wu||"",onChange:e=>setWuCd(day,"wu",e.target.value),placeholder:"e.g. 3",className:"mono",step:"0.1"})
-          ),
-          h("div",null,
-            h("label",{className:"lbl"},"Cool down KMs inc. strides or accs"),
-            h("input",{type:"number",value:d.cd||"",onChange:e=>setWuCd(day,"cd",e.target.value),placeholder:"e.g. 2",className:"mono",step:"0.1"})
-          )
-        )
+        !isRest&&d.sessions.map((sess,i)=>h(SessionEditor,{key:i,session:sess,index:i,total:d.sessions.length,onChange:s=>updSess(day,i,s),onRemove:()=>remSess(day,i)}))
       );
     }),
     h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}},
@@ -768,18 +772,23 @@ const SessRepForm = ({session, existing, onChange}) => {
 
   const initPartReps = parts.map((p,i) => existing?.partReps?.[i]||{typeData:{actualDistance:p.distance||""}});
   const [partReps, setPartReps] = useState(initPartReps);
-  const [f, setF] = useState(existing||{status:"done", effort:"6", hr:"", notes:""});
+  const [f, setF] = useState(existing||{status:"done", effort:"6", hr:"", notes:"", wu:"", cd:""});
 
   const s = (k,v) => { const nx={...f,[k]:v}; setF(nx); emitAll(nx, partReps); };
   const updatePart = (i,v) => { const n=[...partReps]; n[i]=v; setPartReps(n); emitAll(f,n); };
   const emitAll = (ff, pr) => {
-    const totalActual = pr.reduce((s,p)=>s+(parseFloat(p.typeData?.actualDistance||p.actualDistance)||0),0);
-    onChange({...ff, partReps:pr, actualDistance:totalActual.toFixed(1)});
+    const mainActual = pr.reduce((s,p)=>s+(parseFloat(p.typeData?.actualDistance||p.actualDistance)||0),0);
+    const totalActual = (parseFloat(ff.wu)||0) + mainActual + (parseFloat(ff.cd)||0);
+    onChange({...ff, partReps:pr, actualDistance:mainActual.toFixed(1), totalKm:totalActual.toFixed(1)});
   };
 
   return h("div",{style:{background:"var(--surface-alt)", borderRadius:8, padding:"12px 14px", marginBottom:10, borderLeft:`3px solid ${wt.color}`}},
     h("div",{style:{fontSize:12, fontWeight:700, color:wt.dark, marginBottom:8}},
       wt.label+(km>0?` · Total KMs: ${km.toFixed(1)} km`:"")
+    ),
+    h("div",{style:{marginBottom:10,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)"}},
+      h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
+      h("input",{type:"number",value:f.wu||"",onChange:e=>s("wu",e.target.value),placeholder:"e.g. 3",className:"mono",step:"0.1",style:{maxWidth:120}})
     ),
     h("div",{style:{display:"flex", gap:6, marginBottom:10}},
       Object.entries(SS).map(([st,ss])=>h("button",{key:st, onClick:()=>s("status",st), style:{flex:1,padding:"7px 0",borderRadius:6,cursor:"pointer",fontWeight:600,fontSize:12,border:f.status===st?`2px solid ${ss.border}`:"0.5px solid var(--border)",background:f.status===st?ss.bg:"var(--surface)",color:f.status===st?ss.color:"var(--text-muted)"}},ss.label))
@@ -802,7 +811,11 @@ const SessRepForm = ({session, existing, onChange}) => {
           h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-muted)"}},h("span","Easy"),h("span","Max"))
         )
       ),
-      h("div",null,h("label",{className:"lbl"},"Notes"),h("textarea",{value:f.notes,onChange:e=>s("notes",e.target.value),rows:2,placeholder:"How did it feel?"}))
+      h("div",{style:{marginBottom:10}},h("label",{className:"lbl"},"Notes"),h("textarea",{value:f.notes,onChange:e=>s("notes",e.target.value),rows:2,placeholder:"How did it feel?"})),
+      h("div",{style:{padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)"}},
+        h("label",{className:"lbl"},"Cool down KMs inc. strides or accs"),
+        h("input",{type:"number",value:f.cd||"",onChange:e=>s("cd",e.target.value),placeholder:"e.g. 2",className:"mono",step:"0.1",style:{maxWidth:120}})
+      )
     )
   );
 };
@@ -828,15 +841,23 @@ const SliderScale = ({label,value,onChange,leftLabel,rightLabel,reverse=false,em
 
 const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
   const init=existingReport?.sessions||[];
-  const [reps,setReps]=useState(daySessions.map((sess,i)=>init[i]?{...init[i]}:{status:"done",effort:"6",hr:"",notes:""}));
+  // Old reports stored wu/cd once per day; migrate that onto the first session's report.
+  const [reps,setReps]=useState(daySessions.map((sess,i)=>{
+    const base=init[i]?{...init[i]}:{status:"done",effort:"6",hr:"",notes:"",wu:"",cd:""};
+    if(i===0){
+      if(!base.wu&&existingReport?.wu) base.wu=existingReport.wu;
+      if(!base.cd&&existingReport?.cd) base.cd=existingReport.cd;
+    }
+    return base;
+  }));
   const [sleep,setSleep]=useState(existingReport?.sleep||"3");
   const [stress,setStress]=useState(existingReport?.stress||"3");
-  const [wu,setWu]=useState(existingReport?.wu||"");
-  const [cd,setCd]=useState(existingReport?.cd||"");
   const upd=(i,v)=>setReps(r=>{const n=[...r];n[i]=v;return n;});
 
+  const wuKm = reps.reduce((s,r)=>s+(parseFloat(r.wu)||0),0);
   const mainKm = reps.reduce((s,r)=>s+(parseFloat(r.actualDistance)||0),0);
-  const totalKm = (parseFloat(wu)||0) + mainKm + (parseFloat(cd)||0);
+  const cdKm = reps.reduce((s,r)=>s+(parseFloat(r.cd)||0),0);
+  const totalKm = wuKm + mainKm + cdKm;
 
   return h("div",null,
     h("div",{style:{marginBottom:14,fontSize:13,color:"var(--text-muted)"}},daySessions.length+" session"+(daySessions.length>1?"s":"")+" planned for "+day),
@@ -848,28 +869,14 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
         h(SliderScale,{label:"Stress level",value:stress,onChange:setStress,leftLabel:"Relaxed",rightLabel:"Stressed",reverse:true,emojis:["🙂","😐","😣"]})
       )
     ),
-    // WU + CD
-    h("div",{style:{background:"var(--info-bg)",borderRadius:8,padding:"12px 14px",marginBottom:12,border:"0.5px solid var(--border-strong)"}},
-      h("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-muted2)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}},"Warm up & Cool down"),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
-        h("div",null,
-          h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
-          h("input",{type:"number",value:wu,onChange:e=>setWu(e.target.value),placeholder:"e.g. 3",className:"mono",step:"0.1"})
-        ),
-        h("div",null,
-          h("label",{className:"lbl"},"Cool down KMs inc. strides or accs"),
-          h("input",{type:"number",value:cd,onChange:e=>setCd(e.target.value),placeholder:"e.g. 2",className:"mono",step:"0.1"})
-        )
-      )
-    ),
-    // Sessions
+    // Sessions — each with its own warm up (top) & cool down (bottom)
     daySessions.map((sess,i)=>h(SessRepForm,{key:i,session:sess,existing:reps[i],onChange:v=>upd(i,v)})),
     // Total KMs summary
     h("div",{style:{background:"var(--surface-alt)",borderRadius:8,padding:"10px 14px",marginBottom:12,border:"0.5px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}},
       h("div",{style:{fontSize:13,color:"var(--text-muted2)"}},
-        h("span",{style:{marginRight:16}},"WU: ",h("strong",{className:"mono"},(parseFloat(wu)||0).toFixed(1)," km")),
+        h("span",{style:{marginRight:16}},"WU: ",h("strong",{className:"mono"},wuKm.toFixed(1)," km")),
         h("span",{style:{marginRight:16}},"Main: ",h("strong",{className:"mono"},mainKm.toFixed(1)," km")),
-        h("span",null,"CD: ",h("strong",{className:"mono"},(parseFloat(cd)||0).toFixed(1)," km"))
+        h("span",null,"CD: ",h("strong",{className:"mono"},cdKm.toFixed(1)," km"))
       ),
       h("div",{style:{fontSize:15,fontWeight:700,color:"var(--text)"}},
         "Total: ",h("span",{className:"mono",style:{color:"var(--accent)"}},totalKm.toFixed(1)," km")
@@ -877,7 +884,7 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
     ),
     h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}},
       h("button",{className:"btn",onClick:onCancel},"Cancel"),
-      h("button",{className:"btnp",onClick:()=>onSave({sessions:reps,sleep,stress,wu,cd,totalKm:totalKm.toFixed(1)})},"Submit report")
+      h("button",{className:"btnp",onClick:()=>onSave({sessions:reps,sleep,stress,totalKm:totalKm.toFixed(1)})},"Submit report")
     )
   );
 };
@@ -1035,8 +1042,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
 const dayActualKm = r => {
   if (!r?.sessions) return 0;
   if (r.totalKm!=null && r.totalKm!=="") return parseFloat(r.totalKm)||0;
-  const mainKm = r.sessions.reduce((s,rep)=>s+(parseFloat(rep.actualDistance)||0),0);
-  return mainKm + (parseFloat(r.wu)||0) + (parseFloat(r.cd)||0);
+  return r.sessions.reduce((s,rep)=>s+(parseFloat(rep.actualDistance)||0)+(parseFloat(rep.wu)||0)+(parseFloat(rep.cd)||0),0);
 };
 
 const printWeeklySummary = (athlete, plan, reports, weekOff) => {
