@@ -1220,10 +1220,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
   const dDays=wDays.filter(d=>reports[d]?.sessions?.some(s=>s.status==="done"||s.status==="modified"));
   const comp=wDays.length?Math.round(dDays.length/wDays.length*100):null;
   const totalKm=DAYS.reduce((s,d)=>s+dayTotalKm(plan[d]),0);
-  const actualKm=DAYS.reduce((s,day)=>{
-    const r=reports[day]; if(!r?.sessions) return s;
-    return s+r.sessions.reduce((ss,rep)=>ss+(parseFloat(rep.actualDistance)||0),0);
-  },0);
+  const actualKm=DAYS.reduce((s,day)=>s+dayActualKm(reports[day]),0);
   const cc=ccColor(comp);
   const pbLine=[athlete.age&&`Age ${athlete.age}`,athlete.events,athlete.pb5k&&`5K ${athlete.pb5k}`,athlete.pb10k&&`10K ${athlete.pb10k}`,athlete.pbHalf&&`Half ${athlete.pbHalf}`,athlete.pbMarathon&&`Marathon ${athlete.pbMarathon}`].filter(Boolean).join(" · ");
   const group=groups.find(g=>g.id===athlete.groupId);
@@ -1366,10 +1363,7 @@ const AthleteHome = ({user,onSignOut}) => {
   const dDays=wDays.filter(d=>reports[d]?.sessions?.some(s=>s.status==="done"||s.status==="modified"));
   const comp=wDays.length?Math.round(dDays.length/wDays.length*100):null;
   const cc=ccColor(comp);
-  const actualKm=DAYS.reduce((s,day)=>{
-    const r=reports[day]; if(!r?.sessions) return s;
-    return s+r.sessions.reduce((ss,rep)=>ss+(parseFloat(rep.actualDistance)||0),0);
-  },0);
+  const actualKm=DAYS.reduce((s,day)=>s+dayActualKm(reports[day]),0);
 
   return h("div",{style:{maxWidth:680,margin:"0 auto",padding:"1.5rem 1rem"}},
     h(AthleteSilhouetteAccent,{name:profile.name}),
