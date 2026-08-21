@@ -916,6 +916,7 @@ const repSummary = (rep, parts) => {
         if (td.part1Pace) detail += ` · base ${td.part1Pace}/km`;
         if (td.part2AvgPace) detail += ` · part 2 avg ${td.part2AvgPace}/km`;
         if (td.fasterPace) detail += ` · faster ${td.fasterPace}/km`;
+        if (td.transitionPace) detail += ` · transition ${td.transitionPace}/km`;
       }
       else if (type==="fartlek") {
         if (td.avgPace) detail += `avg ${td.avgPace}/km`;
