@@ -629,7 +629,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
         h("input",{value:f.part1Pace||"",onChange:e=>s("part1Pace",e.target.value),placeholder:"e.g. 5:30",className:"mono"})
       ),
       h("div",{style:{marginBottom:8}},
-        h("label",{className:"lbl"},"Part 2 — type"),
+        h("label",{className:"lbl"},"Part 2"),
         h("div",{style:{display:"flex",gap:6,marginBottom:10}},
           ["steady","progression","speedgame"].map(t=>
             h("button",{key:t,onClick:()=>s("part2Type",t),style:{flex:1,padding:"6px 0",borderRadius:6,cursor:"pointer",fontWeight:600,fontSize:12,
@@ -647,9 +647,15 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
           h("div",null,h("label",{className:"lbl"},"Start pace (mm:ss)"),h("input",{value:f.progStart||"",onChange:e=>s("progStart",e.target.value),placeholder:"e.g. 5:10",className:"mono"})),
           h("div",null,h("label",{className:"lbl"},"Finish pace (mm:ss)"),h("input",{value:f.progEnd||"",onChange:e=>s("progEnd",e.target.value),placeholder:"e.g. 4:30",className:"mono"}))
         ),
-        part2Type==="speedgame"&&h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
-          h("div",null,h("label",{className:"lbl"},"Faster pace (mm:ss)"),h("input",{value:f.fasterPace||"",onChange:e=>s("fasterPace",e.target.value),placeholder:"e.g. 4:20",className:"mono"})),
-          h("div",null,h("label",{className:"lbl"},"Transition pace (mm:ss)"),h("input",{value:f.transitionPace||"",onChange:e=>s("transitionPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
+        part2Type==="speedgame"&&h("div",null,
+          h("div",{style:{marginBottom:10}},
+            h("label",{className:"lbl"},"Part 2 avg. pace (mm:ss)"),
+            h("input",{value:f.part2AvgPace||"",onChange:e=>s("part2AvgPace",e.target.value),placeholder:"e.g. 4:45",className:"mono"})
+          ),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+            h("div",null,h("label",{className:"lbl"},"Faster pace (mm:ss)"),h("input",{value:f.fasterPace||"",onChange:e=>s("fasterPace",e.target.value),placeholder:"e.g. 4:20",className:"mono"})),
+            h("div",null,h("label",{className:"lbl"},"Transition pace (mm:ss)"),h("input",{value:f.transitionPace||"",onChange:e=>s("transitionPace",e.target.value),placeholder:"e.g. 5:00",className:"mono"}))
+          )
         )
       )
     );
@@ -908,6 +914,7 @@ const repSummary = (rep, parts) => {
       else if (type==="long") {
         if (td.avgPace) detail += `avg ${td.avgPace}/km`;
         if (td.part1Pace) detail += ` · base ${td.part1Pace}/km`;
+        if (td.part2AvgPace) detail += ` · part 2 avg ${td.part2AvgPace}/km`;
         if (td.fasterPace) detail += ` · faster ${td.fasterPace}/km`;
       }
       else if (type==="fartlek") {
