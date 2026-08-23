@@ -224,6 +224,9 @@ const weekKey = (off=0) => {
 };
 const weekLabel = (off=0) => {const s=getWeekStart(off),e=new Date(s);e.setDate(s.getDate()+6);return `${s.getDate()}/${s.getMonth()+1} – ${e.getDate()}/${e.getMonth()+1}`;};
 const todayShort = () => DAYS[new Date().getDay()];
+const monthKey = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+const prevMonthKey = (d=new Date()) => monthKey(new Date(d.getFullYear(), d.getMonth()-1, 1));
+const monthLabel = (d=new Date()) => d.toLocaleDateString("en-GB",{month:"long",year:"numeric"});
 const initials = n => n.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
 const ccColor  = p => p===null?{bg:"var(--neutral-bg)",color:"var(--text-muted)"}:p>=80?{bg:"var(--success-bg)",color:"var(--success-text)"}:p>=50?{bg:"var(--warning-bg)",color:"var(--warning-text)"}:{bg:"var(--danger-bg)",color:"var(--danger-text)"};
 const newPart  = (type="easy") => ({type,mode:"distance",distance:"",duration:"",pace:"",notes:"",_showPace:false,_showKm:false});
@@ -895,6 +898,57 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
   );
 };
 
+// Weekly check-in — medical issues / niggles + resting HR, reported once per week
+const WeekCheckin = ({data,isCoach,onSave}) => {
+  const [medical,setMedical]=useState(data?.medical||"");
+  const [restingHr,setRestingHr]=useState(data?.restingHr||"");
+  useEffect(()=>{setMedical(data?.medical||"");setRestingHr(data?.restingHr||"");},[data]);
+
+  if(isCoach){
+    if(!data?.medical&&!data?.restingHr) return null;
+    return h("div",{style:{marginTop:14,background:"var(--surface-alt)",border:"0.5px solid var(--border)",borderRadius:10,padding:"12px 16px"}},
+      h("div",{className:"stit"},"Weekly check-in"),
+      data.restingHr&&h("div",{style:{fontSize:13,marginBottom:data.medical?6:0}},"Resting HR: ",h("strong",{className:"mono"},data.restingHr+" bpm")),
+      data.medical&&h("div",{style:{fontSize:13,color:"var(--warning-text)"}},"⚠ "+data.medical)
+    );
+  }
+
+  return h("div",{style:{marginTop:14,background:"var(--surface-alt)",border:"0.5px solid var(--border)",borderRadius:10,padding:"14px 16px"}},
+    h("div",{className:"stit"},"Weekly check-in"),
+    h("div",{style:{marginBottom:10,maxWidth:180}},
+      h("label",{className:"lbl"},"Resting HR (bpm)"),
+      h("input",{type:"number",value:restingHr,onChange:e=>setRestingHr(e.target.value),placeholder:"e.g. 48 — optional",className:"vague"})
+    ),
+    h("div",{style:{marginBottom:10}},
+      h("label",{className:"lbl"},"Any medical issues or niggles this week?"),
+      h("textarea",{value:medical,onChange:e=>setMedical(e.target.value),rows:2,placeholder:"e.g. tight calf since Wednesday — optional"})
+    ),
+    h("div",{style:{display:"flex",justifyContent:"flex-end"}},
+      h("button",{className:"btnp btns",onClick:()=>onSave({medical,restingHr})},"Save check-in")
+    )
+  );
+};
+
+// Monthly weight — optional, athlete-entered, coach sees read-only
+const MonthlyWeight = ({current,previous,isCoach,onSave}) => {
+  const [val,setVal]=useState(current?.kg||"");
+  useEffect(()=>{setVal(current?.kg||"");},[current]);
+  const hasCurrent = !!current?.kg;
+
+  return h("div",{style:{background:"var(--surface-alt)",border:"0.5px solid var(--border)",borderRadius:10,padding:"10px 14px",marginBottom:"1.5rem",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}},
+    h("div",null,
+      h("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}},"⚖ Weight — "+monthLabel()),
+      previous?.kg&&h("span",{style:{fontSize:11,color:"var(--text-muted)"}},"Last month: "+previous.kg+" kg")
+    ),
+    isCoach
+      ? h("div",{className:"mono",style:{fontSize:16,fontWeight:700}},hasCurrent?current.kg+" kg":"–")
+      : h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+          h("input",{type:"number",step:"0.1",value:val,onChange:e=>setVal(e.target.value),placeholder:"kg",className:"mono",style:{maxWidth:80}}),
+          h("button",{className:"btn btns",onClick:()=>onSave(val)},hasCurrent?"Update":"Save")
+        )
+  );
+};
+
 // Extract a readable summary from a session report (new or old format)
 const repSummary = (rep, parts) => {
   if (!rep) return null;
@@ -947,7 +1001,7 @@ const repSummary = (rep, parts) => {
   return lines;
 };
 
-const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan}) => {
+const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin}) => {
   const [editPlan,setEditPlan]=useState(false);
   const [repDay,setRepDay]=useState(null);
 
@@ -1039,6 +1093,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
 
   return h(Fragment,null,
     DAYS.map(day=>renderSessions(day)),
+    h(WeekCheckin,{data:reports.weekCheckin,isCoach,onSave:onSaveWeekCheckin}),
     repDay&&h(Modal,{title:"Report — "+repDay,onClose:()=>setRepDay(null),wide:true},
       h(ReportForm,{day:repDay,daySessions:plan[repDay]?.sessions||[],existingReport:reports[repDay],onCancel:()=>setRepDay(null),onSave:r=>{onReport(repDay,r);setRepDay(null);}})
     )
@@ -1169,8 +1224,17 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
   const [groupPlan,setGroupPlan]=useState({});
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState(null);
+  const [weightCur,setWeightCur]=useState(null);
+  const [weightPrev,setWeightPrev]=useState(null);
   const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
   const today=todayShort();
+
+  useEffect(()=>{
+    Promise.all([
+      dbGet(`weight/${athlete.id}/entries/${monthKey()}`),
+      dbGet(`weight/${athlete.id}/entries/${prevMonthKey()}`)
+    ]).then(([c,p])=>{setWeightCur(c);setWeightPrev(p);});
+  },[athlete.id]);
 
   useEffect(()=>{
     setLoading(true);
@@ -1214,6 +1278,15 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       showToast("Report saved");
     } catch(e) { showToast("Error saving report: "+e.message,false); }
   };
+  const saveWeekCheckin=async(data)=>{
+    const wk=weekKey(weekOff);
+    const newReps={...reports,weekCheckin:data};
+    try {
+      await dbSet(`reports/${athlete.id}/weeks/${wk}`,newReps);
+      setReports(newReps);
+      showToast("Check-in saved");
+    } catch(e) { showToast("Error saving check-in: "+e.message,false); }
+  };
   const updateAthlete=async(f)=>{
     try {
       await dbSet(`athletes/${athlete.id}`,{name:f.name,level:f.level,age:f.age,pb5k:f.pb5k,pb10k:f.pb10k,pbHalf:f.pbHalf,pbMarathon:f.pbMarathon,events:f.events,notes:f.notes,groupId:f.groupId||""});
@@ -1255,6 +1328,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
       h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
     ),
+    h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:true}),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"0.5px solid var(--border)",marginBottom:14}},
       h("div",{style:{display:"flex"}},
         h("button",{className:"tabb"+(tab==="plan"?" act":""),onClick:()=>setTab("plan")},"Training plan"),
@@ -1269,7 +1343,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       )
     ),
     loading?h(Spinner):null,
-    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport}),
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin}),
     !loading&&tab==="reports"&&h("div",null,
       DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
         const d=plan[day],r=reports[day],sessions=d?.sessions||[];
@@ -1326,12 +1400,30 @@ const AthleteHome = ({user,onSignOut}) => {
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState(null);
   const [showCalendar,setShowCalendar]=useState(false);
+  const [weightCur,setWeightCur]=useState(null);
+  const [weightPrev,setWeightPrev]=useState(null);
   const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
   const today=todayShort();
 
   useEffect(()=>{
     dbGet(`athletes/${user.uid}`).then(p=>{setProfile(p);});
   },[user.uid]);
+
+  useEffect(()=>{
+    Promise.all([
+      dbGet(`weight/${user.uid}/entries/${monthKey()}`),
+      dbGet(`weight/${user.uid}/entries/${prevMonthKey()}`)
+    ]).then(([c,p])=>{setWeightCur(c);setWeightPrev(p);});
+  },[user.uid]);
+
+  const saveWeight=async(kg)=>{
+    if(!kg)return;
+    try {
+      await dbSet(`weight/${user.uid}/entries/${monthKey()}`,{kg});
+      setWeightCur({kg});
+      showToast("Weight saved");
+    } catch(e) { showToast("Error saving weight: "+e.message,false); }
+  };
 
   useEffect(()=>{
     if(!profile)return;
@@ -1362,6 +1454,15 @@ const AthleteHome = ({user,onSignOut}) => {
       setReports(newReps);
       showToast("Report submitted ✓");
     } catch(e) { showToast("Error saving report: "+e.message,false); }
+  };
+  const saveWeekCheckin=async(data)=>{
+    const wk=weekKey(weekOff);
+    const newReps={...reports,weekCheckin:data};
+    try {
+      await dbSet(`reports/${user.uid}/weeks/${wk}`,newReps);
+      setReports(newReps);
+      showToast("Check-in saved");
+    } catch(e) { showToast("Error saving check-in: "+e.message,false); }
   };
 
   if(!profile)return h(Spinner);
@@ -1396,6 +1497,7 @@ const AthleteHome = ({user,onSignOut}) => {
       h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
       h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
     ),
+    h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:false,onSave:saveWeight}),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"0.5px solid var(--border)",marginBottom:14}},
       h("div",{style:{display:"flex"}},
         h("button",{className:"tabb"+(tab==="plan"?" act":""),onClick:()=>setTab("plan")},"My plan"),
@@ -1408,7 +1510,7 @@ const AthleteHome = ({user,onSignOut}) => {
       )
     ),
     loading?h(Spinner):null,
-    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport}),
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin}),
     !loading&&tab==="reports"&&h("div",null,
       DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
         const d=plan[day],r=reports[day],sessions=d?.sessions||[];
