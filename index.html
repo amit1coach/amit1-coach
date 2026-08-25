@@ -572,6 +572,70 @@ const AthleteForm = ({initial,groups,onSave,onCancel}) => {
   );
 };
 
+// ── Garmin TCX import ────────────────────────────────────────────────────────
+// Client-side only: athletes export "Export TCX" from a Garmin Connect activity
+// page and upload the file here. Parsed with the browser's built-in DOMParser —
+// no library, no server round-trip.
+const formatPaceFromSecPerKm = (secPerKm) => {
+  if (!secPerKm || !isFinite(secPerKm) || secPerKm<=0) return "";
+  const m=Math.floor(secPerKm/60), sec=Math.round(secPerKm%60);
+  return m+":"+String(sec).padStart(2,"0");
+};
+const formatHms = (totalSec) => {
+  totalSec=Math.round(totalSec||0);
+  const hh=Math.floor(totalSec/3600), mm=Math.floor((totalSec%3600)/60), ss=totalSec%60;
+  return (hh>0?hh+":":"")+(hh>0?String(mm).padStart(2,"0"):String(mm))+":"+String(ss).padStart(2,"0");
+};
+const parseTcxFile = (xmlText) => {
+  const doc = new DOMParser().parseFromString(xmlText,"application/xml");
+  if (doc.getElementsByTagName("parsererror").length) return null;
+  const laps = Array.from(doc.getElementsByTagName("Lap"));
+  if (!laps.length) return null;
+  let totalTime=0, totalDist=0, hrWeighted=0, hrWeightedTime=0;
+  laps.forEach(lap=>{
+    const t=parseFloat(lap.getElementsByTagName("TotalTimeSeconds")[0]?.textContent||"0")||0;
+    const d=parseFloat(lap.getElementsByTagName("DistanceMeters")[0]?.textContent||"0")||0;
+    totalTime+=t; totalDist+=d;
+    const avgHrEl=lap.getElementsByTagName("AverageHeartRateBpm")[0];
+    const v=avgHrEl?(parseFloat(avgHrEl.getElementsByTagName("Value")[0]?.textContent||"0")||0):0;
+    if(v>0){ hrWeighted+=v*t; hrWeightedTime+=t; }
+  });
+  if (!(totalDist>0)) return null;
+  let avgHr=null;
+  if (hrWeightedTime>0) avgHr=Math.round(hrWeighted/hrWeightedTime);
+  else {
+    const tps=Array.from(doc.getElementsByTagName("Trackpoint"));
+    let sum=0,count=0;
+    tps.forEach(tp=>{
+      const hrEl=tp.getElementsByTagName("HeartRateBpm")[0];
+      const v=hrEl?(parseFloat(hrEl.getElementsByTagName("Value")[0]?.textContent||"0")||0):0;
+      if(v>0){sum+=v;count++;}
+    });
+    if(count>0) avgHr=Math.round(sum/count);
+  }
+  const distKm = totalDist/1000;
+  const paceSecPerKm = distKm>0 ? totalTime/distKm : 0;
+  return {
+    distKm,
+    totalTimeSec: totalTime,
+    pace: formatPaceFromSecPerKm(paceSecPerKm),
+    finishTime: formatHms(totalTime),
+    avgHr
+  };
+};
+// Maps an imported activity onto the fields a given session-part type actually shows.
+const GARMIN_PACE_FIELD = { tempo:"tempoPace", long:"avgPace", fartlek:"avgPace" };
+const garminFillTypeData = (type, existingTypeData, parsed) => {
+  const existing = existingTypeData||{};
+  if (type==="hills") return existing; // distance is computed from hill rows, don't override
+  const base = {...existing, actualDistance: parsed.distKm.toFixed(2)};
+  if (type==="race") { base.finishTime = parsed.finishTime; return base; }
+  if (type==="interval") return base; // splits stay free-text/manual
+  if (type==="strength") return {...existing, duration:String(Math.round(parsed.totalTimeSec/60))};
+  base[GARMIN_PACE_FIELD[type]||"actualPace"] = parsed.pace;
+  return base;
+};
+
 // ── Per-type report fields ────────────────────────────────────────────────────
 // When a part is planned by time (planPart.mode==="time"), shows actual duration
 // plus a small reveal-on-click field for an estimated/accomplished km — the same
@@ -782,6 +846,8 @@ const SessRepForm = ({session, existing, onChange}) => {
   const initPartReps = parts.map((p,i) => existing?.partReps?.[i]||{typeData:{actualDistance:p.distance||""}});
   const [partReps, setPartReps] = useState(initPartReps);
   const [f, setF] = useState(existing||{status:"done", effort:"6", hr:"", notes:"", wu:"", cd:""});
+  const [importNonce, setImportNonce] = useState(0);
+  const [importMsg, setImportMsg] = useState(null);
 
   const s = (k,v) => { const nx={...f,[k]:v}; setF(nx); emitAll(nx, partReps); };
   const updatePart = (i,v) => { const n=[...partReps]; n[i]=v; setPartReps(n); emitAll(f,n); };
@@ -791,9 +857,45 @@ const SessRepForm = ({session, existing, onChange}) => {
     onChange({...ff, partReps:pr, actualDistance:mainActual.toFixed(1), totalKm:totalActual.toFixed(1)});
   };
 
+  const handleGarminFile = (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseTcxFile(reader.result);
+      if (!parsed) {
+        setImportMsg({ok:false, text:"Couldn't read that file — make sure it's a .tcx export from a Garmin Connect activity."});
+        return;
+      }
+      let newPartReps = partReps;
+      if (!multiPart) {
+        const td = garminFillTypeData(parts[0]?.type||"easy", partReps[0]?.typeData, parsed);
+        newPartReps = [{...partReps[0], typeData:td, actualDistance:td.actualDistance||""}, ...partReps.slice(1)];
+      }
+      const newF = parsed.avgHr ? {...f, hr:String(parsed.avgHr)} : f;
+      setPartReps(newPartReps);
+      setF(newF);
+      emitAll(newF, newPartReps);
+      setImportNonce(n=>n+1);
+      setImportMsg({ok:true, text: multiPart
+        ? `Imported ${parsed.distKm.toFixed(2)} km, avg HR ${parsed.avgHr||"—"} — split distance/pace across the parts below manually.`
+        : `Imported ${parsed.distKm.toFixed(2)} km @ ${parsed.pace}/km, avg HR ${parsed.avgHr||"—"}.`
+      });
+    };
+    reader.readAsText(file);
+  };
+
   return h("div",{style:{background:"var(--surface-alt)", borderRadius:8, padding:"12px 14px", marginBottom:10, borderLeft:`3px solid ${wt.color}`}},
     h("div",{style:{fontSize:12, fontWeight:700, color:wt.dark, marginBottom:8}},
       wt.label+(km>0?` · Total KMs: ${km.toFixed(1)} km`:"")
+    ),
+    h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}},
+      h("label",{className:"btn btns",style:{cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,margin:0}},
+        "📥 Import from Garmin (.tcx)",
+        h("input",{type:"file",accept:".tcx,.xml",onChange:handleGarminFile,style:{display:"none"}})
+      ),
+      importMsg&&h("span",{style:{fontSize:11,color:importMsg.ok?"var(--success)":"var(--danger)"}},importMsg.text)
     ),
     h("div",{style:{marginBottom:10,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)"}},
       h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
@@ -811,7 +913,7 @@ const SessRepForm = ({session, existing, onChange}) => {
               "Total actual: ",h("strong",{style:{color:"var(--text)"}},partReps.reduce((s,p)=>s+(parseFloat(p.typeData?.actualDistance||p.actualDistance)||0),0).toFixed(1)+" km")
             )
           )
-        : h(TypedRepFields,{type:parts[0]?.type||"easy", existing:partReps[0]?.typeData, planPart:parts[0], onChange:td=>updatePart(0,{typeData:td,actualDistance:td.actualDistance||""})}),
+        : h(TypedRepFields,{key:"tf0-"+importNonce, type:parts[0]?.type||"easy", existing:partReps[0]?.typeData, planPart:parts[0], onChange:td=>updatePart(0,{typeData:td,actualDistance:td.actualDistance||""})}),
       h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8,marginTop:8}},
         h("div",null,h("label",{className:"lbl"},"Avg HR (bpm)"),h("input",{type:"number",value:f.hr,onChange:e=>s("hr",e.target.value),placeholder:"e.g. 148 — optional",className:"vague"})),
         h("div",null,
