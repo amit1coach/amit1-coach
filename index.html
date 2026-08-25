@@ -592,10 +592,12 @@ const parseTcxFile = (xmlText) => {
   const laps = Array.from(doc.getElementsByTagName("Lap"));
   if (!laps.length) return null;
   let totalTime=0, totalDist=0, hrWeighted=0, hrWeightedTime=0;
+  const lapDetails=[];
   laps.forEach(lap=>{
     const t=parseFloat(lap.getElementsByTagName("TotalTimeSeconds")[0]?.textContent||"0")||0;
     const d=parseFloat(lap.getElementsByTagName("DistanceMeters")[0]?.textContent||"0")||0;
     totalTime+=t; totalDist+=d;
+    lapDetails.push({timeSec:t, distM:d});
     const avgHrEl=lap.getElementsByTagName("AverageHeartRateBpm")[0];
     const v=avgHrEl?(parseFloat(avgHrEl.getElementsByTagName("Value")[0]?.textContent||"0")||0):0;
     if(v>0){ hrWeighted+=v*t; hrWeightedTime+=t; }
@@ -620,14 +622,24 @@ const parseTcxFile = (xmlText) => {
     totalTimeSec: totalTime,
     pace: formatPaceFromSecPerKm(paceSecPerKm),
     finishTime: formatHms(totalTime),
-    avgHr
+    avgHr,
+    laps: lapDetails
   };
 };
 // Maps an imported activity onto the fields a given session-part type actually shows.
 const GARMIN_PACE_FIELD = { tempo:"tempoPace", long:"avgPace", fartlek:"avgPace" };
 const garminFillTypeData = (type, existingTypeData, parsed) => {
   const existing = existingTypeData||{};
-  if (type==="hills") return existing; // distance is computed from hill rows, don't override
+  if (type==="hills") {
+    // Only usable if the athlete lapped their watch per rep — one TCX lap per row.
+    // Recovery-jog laps come through too; coach/athlete deletes rows that aren't reps.
+    if (!parsed.laps || parsed.laps.length<2) return existing;
+    return {
+      ...existing,
+      hillRows: parsed.laps.map(lap=>({sets:"1", reps:"1", distM:String(Math.round(lap.distM)), avgTime:formatHms(lap.timeSec)})),
+      actualDistance: parsed.distKm.toFixed(3)
+    };
+  }
   const base = {...existing, actualDistance: parsed.distKm.toFixed(2)};
   if (type==="race") { base.finishTime = parsed.finishTime; return base; }
   if (type==="interval") return base; // splits stay free-text/manual
@@ -770,20 +782,22 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
     },0);
     return h("div",{style:{marginBottom:8}},
       h("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-muted2)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}},"Hill sets"),
-      h("div",{style:{display:"grid",gridTemplateColumns:"80px 80px 80px 1fr 24px",gap:6,marginBottom:4,alignItems:"center"}},
+      h("div",{style:{display:"grid",gridTemplateColumns:"64px 64px 70px 70px 1fr 24px",gap:6,marginBottom:4,alignItems:"center"}},
         h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Sets"),
         h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Reps"),
         h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Dist (m)"),
+        h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Avg time"),
         h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"= km"),
         h("div")
       ),
       rows.map((row,i)=>{
         const sets=parseFloat(row.sets)||1, reps=parseFloat(row.reps)||0, dist=parseFloat(row.distM)||0;
         const rowKm=(sets*reps*dist/1000);
-        return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"80px 80px 80px 1fr 24px",gap:6,marginBottom:6,alignItems:"center"}},
+        return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"64px 64px 70px 70px 1fr 24px",gap:6,marginBottom:6,alignItems:"center"}},
           h("input",{type:"number",value:row.sets,onChange:e=>updateRow(i,"sets",e.target.value),placeholder:"2",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
           h("input",{type:"number",value:row.reps,onChange:e=>updateRow(i,"reps",e.target.value),placeholder:"4",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
           h("input",{type:"number",value:row.distM,onChange:e=>updateRow(i,"distM",e.target.value),placeholder:"120",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
+          h("input",{value:row.avgTime||"",onChange:e=>updateRow(i,"avgTime",e.target.value),placeholder:"0:38",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
           h("div",{style:{fontSize:12,color:"var(--text)",fontFamily:"monospace",padding:"0 4px"}},
             rowKm>0 ? rowKm.toFixed(3)+" km" : "—"
           ),
@@ -878,9 +892,14 @@ const SessRepForm = ({session, existing, onChange}) => {
       setF(newF);
       emitAll(newF, newPartReps);
       setImportNonce(n=>n+1);
+      const isHills = !multiPart && parts[0]?.type==="hills";
       setImportMsg({ok:true, text: multiPart
         ? `Imported ${parsed.distKm.toFixed(2)} km, avg HR ${parsed.avgHr||"—"} — split distance/pace across the parts below manually.`
-        : `Imported ${parsed.distKm.toFixed(2)} km @ ${parsed.pace}/km, avg HR ${parsed.avgHr||"—"}.`
+        : isHills
+          ? (parsed.laps.length>1
+              ? `Imported ${parsed.laps.length} laps as hill rows below (one per row) — delete any that aren't reps, e.g. recovery jogs.`
+              : `This file has only one lap, so it can't be split into reps — enter hill sets manually below.`)
+          : `Imported ${parsed.distKm.toFixed(2)} km @ ${parsed.pace}/km, avg HR ${parsed.avgHr||"—"}.`
       });
     };
     reader.readAsText(file);
@@ -1084,7 +1103,7 @@ const repSummary = (rep, parts) => {
           const rowDetails = hillRows.map(r=>{
             const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
             const km=(sets*reps*dist/1000);
-            return `${sets}×${reps}×${dist}m = ${km.toFixed(3)}km`;
+            return `${sets}×${reps}×${dist}m = ${km.toFixed(3)}km`+(r.avgTime?` @ ${r.avgTime}`:"");
           }).join(" | ");
           detail = rowDetails;
         }
