@@ -877,6 +877,111 @@ const PartRepForm = ({part, index, total, existing, onChange}) => {
   );
 };
 
+// Standalone Garmin lap browser: shows every lap in a file (WU, reps, recovery, CD —
+// everything), lets you check any subset and pin its average as a labeled "group",
+// then check a different subset and pin another. Doesn't write into any report field —
+// purely for reading off numbers, since a mixed WU/reps/CD file doesn't map to one field.
+const LapAnalyzer = ({onClose}) => {
+  const [laps, setLaps] = useState(null);
+  const [checked, setChecked] = useState({});
+  const [groups, setGroups] = useState([]);
+  const [error, setError] = useState(null);
+
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseTcxFile(reader.result);
+      if (!parsed || !parsed.laps || !parsed.laps.length) {
+        setError("Couldn't read that file — make sure it's a .tcx export from a Garmin Connect activity.");
+        return;
+      }
+      setError(null);
+      setLaps(parsed.laps);
+      setChecked({});
+      setGroups([]);
+    };
+    reader.readAsText(file);
+  };
+
+  const toggle = i => setChecked(c=>({...c,[i]:!c[i]}));
+  const selectedIdx = laps ? laps.map((_,i)=>i).filter(i=>checked[i]) : [];
+
+  const computeStats = idxList => {
+    const sel = idxList.map(i=>laps[i]);
+    const totalTime = sel.reduce((s,l)=>s+l.timeSec,0);
+    const totalDist = sel.reduce((s,l)=>s+l.distM,0);
+    const hrVals = sel.filter(l=>l.avgHr).map(l=>l.avgHr);
+    const avgHr = hrVals.length ? Math.round(hrVals.reduce((s,v)=>s+v,0)/hrVals.length) : null;
+    const avgPace = totalDist>0 ? formatPaceFromSecPerKm(totalTime/(totalDist/1000)) : "";
+    const avgTimePerLap = sel.length ? totalTime/sel.length : 0;
+    return { count: sel.length, totalDist, totalTime, avgPace, avgHr, avgTimePerLap };
+  };
+  const liveStats = selectedIdx.length ? computeStats(selectedIdx) : null;
+
+  const saveGroup = () => {
+    if (!selectedIdx.length) return;
+    setGroups(g=>[...g, {label:`Group ${g.length+1}`, ...computeStats(selectedIdx)}]);
+    setChecked({});
+  };
+  const removeGroup = i => setGroups(g=>g.filter((_,idx)=>idx!==i));
+  const renameGroup = (i,label) => setGroups(g=>{const n=[...g]; n[i]={...n[i],label}; return n;});
+
+  return h(Modal,{title:"Analyze laps", onClose, wide:true},
+    !laps && h("div",null,
+      h("label",{className:"btn btns",style:{cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6}},
+        "📥 Choose .tcx file",
+        h("input",{type:"file",accept:".tcx,.xml",onChange:handleFile,style:{display:"none"}})
+      ),
+      error&&h("div",{style:{marginTop:10,fontSize:12,color:"var(--danger)"}},error)
+    ),
+    laps&&h("div",null,
+      h("div",{style:{fontSize:12,color:"var(--text-muted)",marginBottom:10}},
+        laps.length+" laps found. Check the ones you want (e.g. just the uphill reps), Save as group, then check a different set (e.g. the recovery jogs) and save again."
+      ),
+      h("div",{style:{maxHeight:280,overflowY:"auto",border:"0.5px solid var(--border)",borderRadius:8,marginBottom:10}},
+        h("div",{style:{display:"grid",gridTemplateColumns:"28px 46px 1fr 1fr 1fr 90px",gap:6,padding:"6px 10px",fontSize:10,fontWeight:700,color:"var(--text-muted)",borderBottom:"0.5px solid var(--border)",position:"sticky",top:0,background:"var(--surface)"}},
+          h("div"), h("div",null,"#"), h("div",null,"Distance"), h("div",null,"Time"), h("div",null,"Pace"), h("div",null,"Avg HR")
+        ),
+        laps.map((lap,i)=>{
+          const pace = lap.distM>0 ? formatPaceFromSecPerKm(lap.timeSec/(lap.distM/1000)) : "";
+          return h("div",{key:i, onClick:()=>toggle(i), style:{display:"grid",gridTemplateColumns:"28px 46px 1fr 1fr 1fr 90px",gap:6,padding:"6px 10px",fontSize:12,alignItems:"center",cursor:"pointer",background:checked[i]?"var(--info-bg)":"transparent",borderBottom:"0.5px solid var(--border)"}},
+            h("input",{type:"checkbox",checked:!!checked[i],onChange:()=>toggle(i),onClick:e=>e.stopPropagation()}),
+            h("div",null,i+1),
+            h("div",{className:"mono"},(lap.distM/1000).toFixed(3)+" km"),
+            h("div",{className:"mono"},formatHms(lap.timeSec)),
+            h("div",{className:"mono"},pace?pace+"/km":"—"),
+            h("div",{className:"mono"},lap.avgHr?lap.avgHr+" bpm":"—")
+          );
+        })
+      ),
+      h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}},
+        h("div",{style:{fontSize:12,color:"var(--text-muted)"}},selectedIdx.length+" selected"),
+        liveStats&&h("div",{style:{fontSize:12,color:"var(--text)"}},
+          (liveStats.totalDist/1000).toFixed(3)+" km · "+formatHms(liveStats.totalTime)+
+          (liveStats.avgPace?" · "+liveStats.avgPace+"/km":"")+(liveStats.avgHr?" · "+liveStats.avgHr+" bpm":"")
+        ),
+        h("button",{className:"btnp",disabled:!selectedIdx.length,onClick:saveGroup,style:{fontSize:12,opacity:selectedIdx.length?1:0.5}},"Save as group")
+      ),
+      groups.length>0&&h("div",null,
+        h("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-muted2)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}},"Saved groups"),
+        groups.map((g,i)=>h("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"10px 12px",background:"var(--info-bg)",borderRadius:8,border:"0.5px solid var(--border-strong)",marginBottom:8,gap:8}},
+          h("div",{style:{flex:1}},
+            h("input",{value:g.label,onChange:e=>renameGroup(i,e.target.value),style:{fontWeight:700,fontSize:13,border:"none",background:"transparent",padding:0,marginBottom:4,width:"100%",color:"var(--text)"}}),
+            h("div",{style:{fontSize:12,color:"var(--info-text)"}},
+              g.count+" lap"+(g.count!==1?"s":"")+" · "+(g.totalDist/1000).toFixed(3)+" km · "+formatHms(g.totalTime)+" total"+
+              (g.avgPace?" · "+g.avgPace+"/km avg":"")+(g.avgHr?" · "+g.avgHr+" bpm avg":"")+" · "+formatHms(g.avgTimePerLap)+" avg/lap"
+            )
+          ),
+          h("button",{onClick:()=>removeGroup(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:18,lineHeight:1,flexShrink:0}},"×")
+        ))
+      )
+    )
+  );
+};
+
 const SessRepForm = ({session, existing, onChange}) => {
   const parts = session.parts||[{type:"easy",distance:"",pace:""}];
   const wt = WT[sessFirstType(session)]||WT.easy;
@@ -888,6 +993,7 @@ const SessRepForm = ({session, existing, onChange}) => {
   const [f, setF] = useState(existing||{status:"done", effort:"6", hr:"", notes:"", wu:"", cd:""});
   const [importNonce, setImportNonce] = useState(0);
   const [importMsg, setImportMsg] = useState(null);
+  const [showAnalyzer, setShowAnalyzer] = useState(false);
 
   const s = (k,v) => { const nx={...f,[k]:v}; setF(nx); emitAll(nx, partReps); };
   const updatePart = (i,v) => { const n=[...partReps]; n[i]=v; setPartReps(n); emitAll(f,n); };
@@ -940,6 +1046,7 @@ const SessRepForm = ({session, existing, onChange}) => {
         "📥 Import from Garmin (.tcx)",
         h("input",{type:"file",accept:".tcx,.xml",onChange:handleGarminFile,style:{display:"none"}})
       ),
+      h("button",{className:"btn btns",onClick:()=>setShowAnalyzer(true),style:{fontSize:12}},"🔍 Analyze all laps"),
       importMsg&&h("span",{style:{fontSize:11,color:importMsg.ok?"var(--success)":"var(--danger)"}},importMsg.text)
     ),
     h("div",{style:{marginBottom:10,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)"}},
@@ -972,7 +1079,8 @@ const SessRepForm = ({session, existing, onChange}) => {
         h("label",{className:"lbl"},"Cool down KMs inc. strides or accs"),
         h("input",{type:"number",value:f.cd||"",onChange:e=>s("cd",e.target.value),placeholder:"e.g. 2",className:"mono",step:"0.1",style:{maxWidth:120}})
       )
-    )
+    ),
+    showAnalyzer&&h(LapAnalyzer,{onClose:()=>setShowAnalyzer(false)})
   );
 };
 
