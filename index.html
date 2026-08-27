@@ -594,6 +594,9 @@ const parseMmss = (str) => {
   if (parts.length===2) return parts[0]*60+parts[1];
   return parts[0]||0;
 };
+// Formats a saved lap-analyzer group ({count,totalDist,totalTime,avgPace,avgHr,avgTimePerLap}) as one summary line.
+const formatGroupStats = g => g.count+" lap"+(g.count!==1?"s":"")+" · "+(g.totalDist/1000).toFixed(3)+" km · "+formatHms(g.totalTime)+" total"+
+  (g.avgPace?" · "+g.avgPace+"/km avg":"")+(g.avgHr?" · "+g.avgHr+" bpm avg":"")+" · "+formatHms(g.avgTimePerLap)+" avg/lap";
 const parseTcxFile = (xmlText) => {
   const doc = new DOMParser().parseFromString(xmlText,"application/xml");
   if (doc.getElementsByTagName("parsererror").length) return null;
@@ -878,14 +881,14 @@ const PartRepForm = ({part, index, total, existing, onChange}) => {
 };
 
 // Standalone Garmin lap browser: shows every lap in a file (WU, reps, recovery, CD —
-// everything), lets you check any subset and pin its average as a labeled "group",
-// then check a different subset and pin another. Doesn't write into any report field —
-// purely for reading off numbers, since a mixed WU/reps/CD file doesn't map to one field.
-const LapAnalyzer = ({onClose}) => {
+// everything), lets you check any subset and pin its average as a labeled group,
+// then check a different subset and pin another. Saved groups are controlled by the
+// parent (persisted into the report) so they're still visible after this closes.
+const LapAnalyzer = ({onClose, groups, onGroupsChange}) => {
   const [laps, setLaps] = useState(null);
   const [checked, setChecked] = useState({});
-  const [groups, setGroups] = useState([]);
   const [error, setError] = useState(null);
+  const [labelDraft, setLabelDraft] = useState("");
 
   const handleFile = (e) => {
     const file = e.target.files[0];
@@ -901,7 +904,6 @@ const LapAnalyzer = ({onClose}) => {
       setError(null);
       setLaps(parsed.laps);
       setChecked({});
-      setGroups([]);
     };
     reader.readAsText(file);
   };
@@ -923,11 +925,13 @@ const LapAnalyzer = ({onClose}) => {
 
   const saveGroup = () => {
     if (!selectedIdx.length) return;
-    setGroups(g=>[...g, {label:`Group ${g.length+1}`, ...computeStats(selectedIdx)}]);
+    const label = labelDraft.trim() || `Group ${groups.length+1}`;
+    onGroupsChange([...groups, {label, ...computeStats(selectedIdx)}]);
     setChecked({});
+    setLabelDraft("");
   };
-  const removeGroup = i => setGroups(g=>g.filter((_,idx)=>idx!==i));
-  const renameGroup = (i,label) => setGroups(g=>{const n=[...g]; n[i]={...n[i],label}; return n;});
+  const removeGroup = i => onGroupsChange(groups.filter((_,idx)=>idx!==i));
+  const renameGroup = (i,label) => onGroupsChange(groups.map((g,idx)=>idx===i?{...g,label}:g));
 
   return h(Modal,{title:"Analyze laps", onClose, wide:true},
     !laps && h("div",null,
@@ -939,7 +943,7 @@ const LapAnalyzer = ({onClose}) => {
     ),
     laps&&h("div",null,
       h("div",{style:{fontSize:12,color:"var(--text-muted)",marginBottom:10}},
-        laps.length+" laps found. Check the ones you want (e.g. just the uphill reps), Save as group, then check a different set (e.g. the recovery jogs) and save again."
+        laps.length+" laps found. Check the ones you want (e.g. just the uphill reps), label them, and save. Then check a different set (e.g. the recovery jogs) and save again."
       ),
       h("div",{style:{maxHeight:280,overflowY:"auto",border:"0.5px solid var(--border)",borderRadius:8,marginBottom:10}},
         h("div",{style:{display:"grid",gridTemplateColumns:"28px 46px 1fr 1fr 1fr 90px",gap:6,padding:"6px 10px",fontSize:10,fontWeight:700,color:"var(--text-muted)",borderBottom:"0.5px solid var(--border)",position:"sticky",top:0,background:"var(--surface)"}},
@@ -957,23 +961,23 @@ const LapAnalyzer = ({onClose}) => {
           );
         })
       ),
-      h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}},
         h("div",{style:{fontSize:12,color:"var(--text-muted)"}},selectedIdx.length+" selected"),
         liveStats&&h("div",{style:{fontSize:12,color:"var(--text)"}},
           (liveStats.totalDist/1000).toFixed(3)+" km · "+formatHms(liveStats.totalTime)+
           (liveStats.avgPace?" · "+liveStats.avgPace+"/km":"")+(liveStats.avgHr?" · "+liveStats.avgHr+" bpm":"")
-        ),
-        h("button",{className:"btnp",disabled:!selectedIdx.length,onClick:saveGroup,style:{fontSize:12,opacity:selectedIdx.length?1:0.5}},"Save as group")
+        )
+      ),
+      h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}},
+        h("input",{value:labelDraft,onChange:e=>setLabelDraft(e.target.value),placeholder:"Describe this selection — e.g. Hills, Recovery, Warm-up",style:{flex:1,minWidth:200}}),
+        h("button",{className:"btnp",disabled:!selectedIdx.length,onClick:saveGroup,style:{fontSize:12,opacity:selectedIdx.length?1:0.5,flexShrink:0}},"Save as group")
       ),
       groups.length>0&&h("div",null,
         h("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-muted2)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}},"Saved groups"),
         groups.map((g,i)=>h("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"10px 12px",background:"var(--info-bg)",borderRadius:8,border:"0.5px solid var(--border-strong)",marginBottom:8,gap:8}},
           h("div",{style:{flex:1}},
             h("input",{value:g.label,onChange:e=>renameGroup(i,e.target.value),style:{fontWeight:700,fontSize:13,border:"none",background:"transparent",padding:0,marginBottom:4,width:"100%",color:"var(--text)"}}),
-            h("div",{style:{fontSize:12,color:"var(--info-text)"}},
-              g.count+" lap"+(g.count!==1?"s":"")+" · "+(g.totalDist/1000).toFixed(3)+" km · "+formatHms(g.totalTime)+" total"+
-              (g.avgPace?" · "+g.avgPace+"/km avg":"")+(g.avgHr?" · "+g.avgHr+" bpm avg":"")+" · "+formatHms(g.avgTimePerLap)+" avg/lap"
-            )
+            h("div",{style:{fontSize:12,color:"var(--info-text)"}},formatGroupStats(g))
           ),
           h("button",{onClick:()=>removeGroup(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:18,lineHeight:1,flexShrink:0}},"×")
         ))
@@ -990,7 +994,7 @@ const SessRepForm = ({session, existing, onChange}) => {
 
   const initPartReps = parts.map((p,i) => existing?.partReps?.[i]||{typeData:{actualDistance:p.distance||""}});
   const [partReps, setPartReps] = useState(initPartReps);
-  const [f, setF] = useState(existing||{status:"done", effort:"6", hr:"", notes:"", wu:"", cd:""});
+  const [f, setF] = useState(()=>({status:"done", effort:"6", hr:"", notes:"", wu:"", cd:"", garminGroups:[], ...(existing||{})}));
   const [importNonce, setImportNonce] = useState(0);
   const [importMsg, setImportMsg] = useState(null);
   const [showAnalyzer, setShowAnalyzer] = useState(false);
@@ -1049,6 +1053,15 @@ const SessRepForm = ({session, existing, onChange}) => {
       h("button",{className:"btn btns",onClick:()=>setShowAnalyzer(true),style:{fontSize:12}},"🔍 Analyze all laps"),
       importMsg&&h("span",{style:{fontSize:11,color:importMsg.ok?"var(--success)":"var(--danger)"}},importMsg.text)
     ),
+    (f.garminGroups||[]).length>0&&h("div",{style:{marginBottom:10}},
+      (f.garminGroups||[]).map((g,i)=>h("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)",marginBottom:6,gap:8}},
+        h("div",{style:{flex:1}},
+          h("input",{value:g.label,onChange:e=>{const gg=[...f.garminGroups]; gg[i]={...gg[i],label:e.target.value}; s("garminGroups",gg);},placeholder:"Describe this selection",style:{fontWeight:700,fontSize:12,border:"none",background:"transparent",padding:0,marginBottom:2,width:"100%",color:"var(--text)"}}),
+          h("div",{style:{fontSize:11,color:"var(--info-text)"}},formatGroupStats(g))
+        ),
+        h("button",{onClick:()=>s("garminGroups",f.garminGroups.filter((_,idx)=>idx!==i)),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:16,lineHeight:1,flexShrink:0}},"×")
+      ))
+    ),
     h("div",{style:{marginBottom:10,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)"}},
       h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
       h("input",{type:"number",value:f.wu||"",onChange:e=>s("wu",e.target.value),placeholder:"e.g. 3",className:"mono",step:"0.1",style:{maxWidth:120}})
@@ -1080,7 +1093,7 @@ const SessRepForm = ({session, existing, onChange}) => {
         h("input",{type:"number",value:f.cd||"",onChange:e=>s("cd",e.target.value),placeholder:"e.g. 2",className:"mono",step:"0.1",style:{maxWidth:120}})
       )
     ),
-    showAnalyzer&&h(LapAnalyzer,{onClose:()=>setShowAnalyzer(false)})
+    showAnalyzer&&h(LapAnalyzer,{onClose:()=>setShowAnalyzer(false), groups:f.garminGroups||[], onGroupsChange:g=>s("garminGroups",g)})
   );
 };
 
@@ -1627,7 +1640,11 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
                 rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
                 si===0&&r.sleep&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
                 si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},stressEmoji(r.stress)+" STRESS"),h("strong",null,r.stress+"/5")),
-                rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"var(--text-muted2)",fontSize:13}},'"'+rep.notes+'"'))
+                rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"var(--text-muted2)",fontSize:13}},'"'+rep.notes+'"')),
+                (rep.garminGroups||[]).length>0&&h("div",{style:{gridColumn:"1/-1"}},
+                  h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"GARMIN LAPS"),
+                  rep.garminGroups.map((g,gi)=>h("div",{key:gi,style:{fontSize:12,marginBottom:2}},h("strong",null,g.label),": "+formatGroupStats(g)))
+                )
               ),
               si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed var(--border)",marginTop:12}})
             );
@@ -1784,7 +1801,11 @@ const AthleteHome = ({user,onSignOut}) => {
               rep.actualPace&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"PACE"),h("strong",{className:"mono"},rep.actualPace+"/km")),
               rep.hr&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"HR"),h("strong",{className:"mono"},rep.hr+" bpm")),
               rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
-              rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"var(--text-muted2)",fontSize:13}},'"'+rep.notes+'"'))
+              rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"var(--text-muted2)",fontSize:13}},'"'+rep.notes+'"')),
+              (rep.garminGroups||[]).length>0&&h("div",{style:{gridColumn:"1/-1"}},
+                h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"GARMIN LAPS"),
+                rep.garminGroups.map((g,gi)=>h("div",{key:gi,style:{fontSize:12,marginBottom:2}},h("strong",null,g.label),": "+formatGroupStats(g)))
+              )
             );
           })
         );
