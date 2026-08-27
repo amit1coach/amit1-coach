@@ -586,6 +586,14 @@ const formatHms = (totalSec) => {
   const hh=Math.floor(totalSec/3600), mm=Math.floor((totalSec%3600)/60), ss=totalSec%60;
   return (hh>0?hh+":":"")+(hh>0?String(mm).padStart(2,"0"):String(mm))+":"+String(ss).padStart(2,"0");
 };
+// Parses "mm:ss" or "h:mm:ss" text (incl. hand-edited values) back to seconds.
+const parseMmss = (str) => {
+  if (!str) return 0;
+  const parts = String(str).split(":").map(x=>parseFloat(x)||0);
+  if (parts.length===3) return parts[0]*3600+parts[1]*60+parts[2];
+  if (parts.length===2) return parts[0]*60+parts[1];
+  return parts[0]||0;
+};
 const parseTcxFile = (xmlText) => {
   const doc = new DOMParser().parseFromString(xmlText,"application/xml");
   if (doc.getElementsByTagName("parsererror").length) return null;
@@ -597,9 +605,9 @@ const parseTcxFile = (xmlText) => {
     const t=parseFloat(lap.getElementsByTagName("TotalTimeSeconds")[0]?.textContent||"0")||0;
     const d=parseFloat(lap.getElementsByTagName("DistanceMeters")[0]?.textContent||"0")||0;
     totalTime+=t; totalDist+=d;
-    lapDetails.push({timeSec:t, distM:d});
     const avgHrEl=lap.getElementsByTagName("AverageHeartRateBpm")[0];
     const v=avgHrEl?(parseFloat(avgHrEl.getElementsByTagName("Value")[0]?.textContent||"0")||0):0;
+    lapDetails.push({timeSec:t, distM:d, avgHr:v>0?Math.round(v):null});
     if(v>0){ hrWeighted+=v*t; hrWeightedTime+=t; }
   });
   if (!(totalDist>0)) return null;
@@ -636,7 +644,7 @@ const garminFillTypeData = (type, existingTypeData, parsed) => {
     if (!parsed.laps || parsed.laps.length<2) return existing;
     return {
       ...existing,
-      hillRows: parsed.laps.map(lap=>({sets:"1", reps:"1", distM:String(Math.round(lap.distM)), avgTime:formatHms(lap.timeSec)})),
+      hillRows: parsed.laps.map(lap=>({sets:"1", reps:"1", distM:String(Math.round(lap.distM)), avgTime:formatHms(lap.timeSec), hr:lap.avgHr||""})),
       actualDistance: parsed.distKm.toFixed(3)
     };
   }
@@ -780,6 +788,15 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
       const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
       return t+(sets*reps*dist/1000);
     },0);
+    // Averages recompute live from whatever rows remain — e.g. after deleting recovery-jog rows.
+    const timedRows = rows.filter(r=>parseMmss(r.avgTime)>0 && (parseFloat(r.distM)||0)>0);
+    const repCount = timedRows.reduce((t,r)=>t+(parseFloat(r.sets)||1)*(parseFloat(r.reps)||1),0);
+    const totalTimedSec = timedRows.reduce((t,r)=>t+parseMmss(r.avgTime)*(parseFloat(r.sets)||1)*(parseFloat(r.reps)||1),0);
+    const totalTimedM = timedRows.reduce((t,r)=>t+(parseFloat(r.distM)||0)*(parseFloat(r.sets)||1)*(parseFloat(r.reps)||1),0);
+    const avgRepTimeSec = repCount>0 ? totalTimedSec/repCount : 0;
+    const avgRepPace = totalTimedM>0 ? formatPaceFromSecPerKm(totalTimedSec/(totalTimedM/1000)) : "";
+    const hrRows = rows.filter(r=>parseFloat(r.hr)>0);
+    const avgRepHr = hrRows.length ? Math.round(hrRows.reduce((t,r)=>t+parseFloat(r.hr),0)/hrRows.length) : null;
     return h("div",{style:{marginBottom:8}},
       h("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-muted2)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}},"Hill sets"),
       h("div",{style:{display:"grid",gridTemplateColumns:"64px 64px 70px 70px 1fr 24px",gap:6,marginBottom:4,alignItems:"center"}},
@@ -793,24 +810,33 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
       rows.map((row,i)=>{
         const sets=parseFloat(row.sets)||1, reps=parseFloat(row.reps)||0, dist=parseFloat(row.distM)||0;
         const rowKm=(sets*reps*dist/1000);
+        const rowTimeSec=parseMmss(row.avgTime);
+        const rowPace = (rowTimeSec>0 && dist>0) ? formatPaceFromSecPerKm(rowTimeSec/(dist/1000)) : "";
         return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"64px 64px 70px 70px 1fr 24px",gap:6,marginBottom:6,alignItems:"center"}},
           h("input",{type:"number",value:row.sets,onChange:e=>updateRow(i,"sets",e.target.value),placeholder:"2",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
           h("input",{type:"number",value:row.reps,onChange:e=>updateRow(i,"reps",e.target.value),placeholder:"4",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
           h("input",{type:"number",value:row.distM,onChange:e=>updateRow(i,"distM",e.target.value),placeholder:"120",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
           h("input",{value:row.avgTime||"",onChange:e=>updateRow(i,"avgTime",e.target.value),placeholder:"0:38",className:"mono",style:{padding:"5px 7px",fontSize:13}}),
-          h("div",{style:{fontSize:12,color:"var(--text)",fontFamily:"monospace",padding:"0 4px"}},
-            rowKm>0 ? rowKm.toFixed(3)+" km" : "—"
+          h("div",{style:{fontSize:12,color:"var(--text)",fontFamily:"monospace",padding:"0 4px",lineHeight:1.3}},
+            rowKm>0 ? rowKm.toFixed(3)+" km" : "—",
+            (rowPace||row.hr)&&h("div",{style:{fontSize:10,color:"var(--text-muted)"}},[rowPace&&rowPace+"/km",row.hr&&row.hr+" bpm"].filter(Boolean).join(" · "))
           ),
           rows.length>1
             ? h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:16,lineHeight:1,padding:0}},"×")
             : h("div")
         );
       }),
-      h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
+      h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4,flexWrap:"wrap",gap:6}},
         h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
         totalHillKm>0&&h("div",{style:{fontSize:13,fontWeight:700,color:"var(--text)"}},
           "Total hill distance: ",h("span",{className:"mono"},totalHillKm.toFixed(3)," km")
         )
+      ),
+      avgRepTimeSec>0&&h("div",{style:{marginTop:8,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)",fontSize:12,color:"var(--info-text)"}},
+        "Avg per rep (",repCount," rep"+(repCount!==1?"s":""),"): ",
+        h("strong",null,formatHms(avgRepTimeSec)),
+        avgRepPace&&h("span",null," · "+avgRepPace+"/km"),
+        avgRepHr&&h("span",null," · "+avgRepHr+" bpm avg HR")
       )
     );
   }
@@ -1103,7 +1129,7 @@ const repSummary = (rep, parts) => {
           const rowDetails = hillRows.map(r=>{
             const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
             const km=(sets*reps*dist/1000);
-            return `${sets}×${reps}×${dist}m = ${km.toFixed(3)}km`+(r.avgTime?` @ ${r.avgTime}`:"");
+            return `${sets}×${reps}×${dist}m = ${km.toFixed(3)}km`+(r.avgTime?` @ ${r.avgTime}`:"")+(r.hr?` (${r.hr} bpm)`:"");
           }).join(" | ");
           detail = rowDetails;
         }
