@@ -581,10 +581,16 @@ const formatPaceFromSecPerKm = (secPerKm) => {
   const m=Math.floor(secPerKm/60), sec=Math.round(secPerKm%60);
   return m+":"+String(sec).padStart(2,"0");
 };
-const formatHms = (totalSec) => {
-  totalSec=Math.round(totalSec||0);
-  const hh=Math.floor(totalSec/3600), mm=Math.floor((totalSec%3600)/60), ss=totalSec%60;
-  return (hh>0?hh+":":"")+(hh>0?String(mm).padStart(2,"0"):String(mm))+":"+String(ss).padStart(2,"0");
+// decimals=0 gives "mm:ss" (or "h:mm:ss"); decimals=1 gives "mm:ss.s" — pass 1 for
+// rep/lap-level times, where a coach analyzing short reps cares about tenths of a second.
+const formatHms = (totalSec, decimals=0) => {
+  const factor = Math.pow(10,decimals);
+  totalSec = Math.round(Math.max(0,totalSec||0)*factor)/factor;
+  const hh = Math.floor(totalSec/3600);
+  const mm = Math.floor((totalSec-hh*3600)/60);
+  const ss = totalSec-hh*3600-mm*60;
+  const ssStr = ss.toFixed(decimals).padStart(decimals>0?3+decimals:2,"0");
+  return (hh>0?hh+":":"")+(hh>0?String(mm).padStart(2,"0"):String(mm))+":"+ssStr;
 };
 // Parses "mm:ss" or "h:mm:ss" text (incl. hand-edited values) back to seconds.
 const parseMmss = (str) => {
@@ -595,8 +601,8 @@ const parseMmss = (str) => {
   return parts[0]||0;
 };
 // Formats a saved lap-analyzer group ({count,totalDist,totalTime,avgPace,avgHr,avgTimePerLap}) as one summary line.
-const formatGroupStats = g => g.count+" lap"+(g.count!==1?"s":"")+" · "+(g.totalDist/1000).toFixed(3)+" km · "+formatHms(g.totalTime)+" total"+
-  (g.avgPace?" · "+g.avgPace+"/km avg":"")+(g.avgHr?" · "+g.avgHr+" bpm avg":"")+" · "+formatHms(g.avgTimePerLap)+" avg/lap";
+const formatGroupStats = g => g.count+" lap"+(g.count!==1?"s":"")+" · "+(g.totalDist/1000).toFixed(3)+" km · "+formatHms(g.totalTime,1)+" total"+
+  (g.avgPace?" · "+g.avgPace+"/km avg":"")+(g.avgHr?" · "+g.avgHr+" bpm avg":"")+" · "+formatHms(g.avgTimePerLap,1)+" avg/lap";
 const parseTcxFile = (xmlText) => {
   const doc = new DOMParser().parseFromString(xmlText,"application/xml");
   if (doc.getElementsByTagName("parsererror").length) return null;
@@ -632,7 +638,7 @@ const parseTcxFile = (xmlText) => {
     distKm,
     totalTimeSec: totalTime,
     pace: formatPaceFromSecPerKm(paceSecPerKm),
-    finishTime: formatHms(totalTime),
+    finishTime: formatHms(totalTime,1),
     avgHr,
     laps: lapDetails
   };
@@ -647,7 +653,7 @@ const garminFillTypeData = (type, existingTypeData, parsed) => {
     if (!parsed.laps || parsed.laps.length<2) return existing;
     return {
       ...existing,
-      hillRows: parsed.laps.map(lap=>({sets:"1", reps:"1", distM:String(Math.round(lap.distM)), avgTime:formatHms(lap.timeSec), hr:lap.avgHr||""})),
+      hillRows: parsed.laps.map(lap=>({sets:"1", reps:"1", distM:String(Math.round(lap.distM)), avgTime:formatHms(lap.timeSec,1), hr:lap.avgHr||""})),
       actualDistance: parsed.distKm.toFixed(3)
     };
   }
@@ -837,7 +843,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
       ),
       avgRepTimeSec>0&&h("div",{style:{marginTop:8,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)",fontSize:12,color:"var(--info-text)"}},
         "Avg per rep (",repCount," rep"+(repCount!==1?"s":""),"): ",
-        h("strong",null,formatHms(avgRepTimeSec)),
+        h("strong",null,formatHms(avgRepTimeSec,1)),
         avgRepPace&&h("span",null," · "+avgRepPace+"/km"),
         avgRepHr&&h("span",null," · "+avgRepHr+" bpm avg HR")
       )
@@ -955,7 +961,7 @@ const LapAnalyzer = ({onClose, groups, onGroupsChange}) => {
             h("input",{type:"checkbox",checked:!!checked[i],onChange:()=>toggle(i),onClick:e=>e.stopPropagation()}),
             h("div",null,i+1),
             h("div",{className:"mono"},(lap.distM/1000).toFixed(3)+" km"),
-            h("div",{className:"mono"},formatHms(lap.timeSec)),
+            h("div",{className:"mono"},formatHms(lap.timeSec,1)),
             h("div",{className:"mono"},pace?pace+"/km":"—"),
             h("div",{className:"mono"},lap.avgHr?lap.avgHr+" bpm":"—")
           );
@@ -964,7 +970,7 @@ const LapAnalyzer = ({onClose, groups, onGroupsChange}) => {
       h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}},
         h("div",{style:{fontSize:12,color:"var(--text-muted)"}},selectedIdx.length+" selected"),
         liveStats&&h("div",{style:{fontSize:12,color:"var(--text)"}},
-          (liveStats.totalDist/1000).toFixed(3)+" km · "+formatHms(liveStats.totalTime)+
+          (liveStats.totalDist/1000).toFixed(3)+" km · "+formatHms(liveStats.totalTime,1)+
           (liveStats.avgPace?" · "+liveStats.avgPace+"/km":"")+(liveStats.avgHr?" · "+liveStats.avgHr+" bpm":"")
         )
       ),
