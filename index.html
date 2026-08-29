@@ -1325,28 +1325,8 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                       );
                     }),
                     sessions.length===1&&dailyKm>0&&h("div",{style:{fontSize:11,color:"var(--text-muted)",marginTop:4}},"Total KMs: ",h("strong",{className:"mono"},dailyKm.toFixed(1)+" km")),
-                    isCoach&&rep&&h("div",{style:{marginTop:6,paddingTop:6,borderTop:"0.5px solid var(--neutral-bg)"}},
-                      h("div",{style:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:4}},
-                        h("span",{style:{fontWeight:700,fontSize:12,color:SS[rep.status]?.color}},SS[rep.status]?.label),
-                        rep.wu&&h("span",{style:{fontSize:12,color:"var(--text-muted)"}},"WU: "+rep.wu+"km"),
-                        h("span",{className:"mono",style:{fontSize:12,color:"var(--text-muted2)"}},"Main: "+rep.actualDistance+"km"),
-                        rep.cd&&h("span",{style:{fontSize:12,color:"var(--text-muted)"}},"CD: "+rep.cd+"km"),
-                        rep.totalKm&&h("span",{style:{fontSize:12,fontWeight:700,color:"var(--text)"}},"Total: "+rep.totalKm+"km"),
-                        rep.hr&&h("span",{style:{fontSize:12,color:"var(--text-muted2)"}},"HR "+rep.hr+"bpm"),
-                        rep.effort&&h("span",{style:{fontSize:12,color:"var(--text-muted2)"}},"Effort "+rep.effort+"/10")
-                      ),
-                      repSummary(rep, sess.parts)?.map((line,li)=>
-                        h("div",{key:li,style:{fontSize:12,color:"var(--text-muted2)",marginBottom:2}},
-                          line.label&&h("span",{style:{fontWeight:600,color:line.color,marginRight:6}},line.label+":"),
-                          line.dist>0&&h("span",{className:"mono",style:{marginRight:6}},line.dist+"km"),
-                          line.detail&&h("span",null,line.detail)
-                        )
-                      ),
-                      rep.notes&&h("div",{style:{fontSize:12,color:"var(--text-muted)",fontStyle:"italic",marginTop:2}},'"'+rep.notes+'"')
-                    ),
-                    si===0&&r?.sleep&&h("div",{style:{display:"flex",gap:12,marginTop:4,fontSize:12,color:"var(--text-muted)"}},
-                      h("span",null,"😴 Sleep: ",h("strong",{style:{color:"var(--text)"}},r.sleep+"/5")),
-                      h("span",null,stressEmoji(r.stress)+" Stress: ",h("strong",{style:{color:"var(--text)"}},r.stress+"/5"))
+                    rep&&h("div",{style:{marginTop:6,paddingTop:6,borderTop:"0.5px solid var(--neutral-bg)"}},
+                      h("span",{style:{fontWeight:700,fontSize:12,color:SS[rep.status]?.color}},SS[rep.status]?.label)
                     ),
                     si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed var(--border)",margin:"10px 0"}})
                   );
@@ -1413,10 +1393,16 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
     const notesList = r?.sessions
       ? sessions.map((sess,si)=>r.sessions[si]?.notes).map((n,i)=>n?{i,n}:null).filter(Boolean)
       : [];
+    const garminList = r?.sessions
+      ? sessions.map((sess,si)=>({i:si,groups:r.sessions[si]?.garminGroups||[]})).filter(x=>x.groups.length>0)
+      : [];
     const sleep = r?.sleep ? r.sleep+"/5" : "–";
     const stress = r?.stress ? r.stress+"/5" : "–";
     const stressIcon = r?.stress ? stressEmoji(r.stress) : "🧠";
-    const types = sessions.map(s=>(s.parts||[]).map(p=>WT[p.type]?.label||p.type).join(" + ")).join(" / ");
+    const types = sessions.map(s=>(s.parts||[]).map(p=>{
+      const wt=WT[p.type]||WT.easy;
+      return `<span style="display:inline-block;padding:1px 7px;margin:1px 3px 1px 0;border-radius:4px;font-size:11px;font-weight:600;background:${wt.color}22;color:${wt.color}">${wt.label}</span>`;
+    }).join("+")).join(" / ");
     const perf = sessions.map((sess,si)=>{
       const rep = r?.sessions?.[si];
       const multiPart = (sess.parts||[]).length>1;
@@ -1436,7 +1422,7 @@ const printWeeklySummary = (athlete, plan, reports, weekOff) => {
       <td>${effort}</td>
       <td style="font-family:monospace">${perf}</td>
       <td>😴${sleep} ${stressIcon}${stress}</td>
-    </tr>${notesList.map(({i,n})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">${sessions.length>1?`Session ${i+1}: `:""}"${n}"</td></tr>`).join("")}`;
+    </tr>${notesList.map(({i,n})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">${sessions.length>1?`Session ${i+1}: `:""}"${n}"</td></tr>`).join("")}${garminList.map(({i,groups})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-size:12px">${sessions.length>1?`<b>Session ${i+1} Garmin laps:</b> `:"<b>Garmin laps:</b> "}${groups.map(g=>`${g.label}: ${formatGroupStats(g)}`).join(" &nbsp;·&nbsp; ")}</td></tr>`).join("")}`;
   }).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -1633,6 +1619,8 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
             const rep=r.sessions[si];if(!rep)return null;
             const wt=WT[sessFirstType(sess)]||WT.easy;
             const km=sessTotalKm(sess);
+            const rs=repSummary(rep,sess.parts);
+            const hasGroups=(rep.garminGroups||[]).length>0;
             return h("div",{key:si,style:{marginBottom:si<sessions.length-1?12:0}},
               sessions.length>1&&h("div",{style:{fontSize:11,fontWeight:700,color:wt.dark,marginBottom:6}},"Session "+(si+1)+": "+wt.label),
               h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
@@ -1640,14 +1628,26 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
                 km>0&&h("span",{className:"mono",style:{fontSize:12,color:"var(--text-muted)"}},"Planned: "+km.toFixed(1)+"km")
               ),
               h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:8}},
+                rep.wu&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"WARM UP"),h("strong",{className:"mono"},rep.wu+" km")),
                 rep.actualDistance&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"DISTANCE"),h("strong",{className:"mono"},rep.actualDistance+" km")),
-                rep.actualPace&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"PACE"),h("strong",{className:"mono"},rep.actualPace+"/km")),
+                rep.cd&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"COOL DOWN"),h("strong",{className:"mono"},rep.cd+" km")),
+                rep.totalKm&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"TOTAL"),h("strong",{className:"mono",style:{color:"var(--text)"}},rep.totalKm+" km")),
                 rep.hr&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"AVG HR"),h("strong",{className:"mono"},rep.hr+" bpm")),
                 rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
                 si===0&&r.sleep&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
                 si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},stressEmoji(r.stress)+" STRESS"),h("strong",null,r.stress+"/5")),
+                rs?.some(l=>l.detail)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
+                  h("summary",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600,cursor:"pointer"}},"SESSION DETAIL"),
+                  h("div",{style:{marginTop:4}},
+                    rs.map((line,li)=>line.detail&&h("div",{key:li,style:{fontSize:12,marginBottom:2}},
+                      line.label&&h("span",{style:{fontWeight:600,color:line.color,marginRight:6}},line.label+":"),
+                      line.dist>0&&h("span",{className:"mono",style:{marginRight:6}},line.dist+"km"),
+                      h("span",null,line.detail)
+                    ))
+                  )
+                ),
                 rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"var(--text-muted2)",fontSize:13}},'"'+rep.notes+'"')),
-                (rep.garminGroups||[]).length>0&&h("div",{style:{gridColumn:"1/-1"}},
+                hasGroups&&h("div",{style:{gridColumn:"1/-1"}},
                   h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"GARMIN LAPS"),
                   rep.garminGroups.map((g,gi)=>h("div",{key:gi,style:{fontSize:12,marginBottom:2}},h("strong",null,g.label),": "+formatGroupStats(g)))
                 )
@@ -1802,13 +1802,29 @@ const AthleteHome = ({user,onSignOut}) => {
           ),
           r?.sessions&&r.sessions.map((rep,si)=>{
             if(!rep)return null;
+            const rs=repSummary(rep,sessions[si]?.parts);
+            const hasGroups=(rep.garminGroups||[]).length>0;
             return h("div",{key:si,style:{marginTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}},
+              rep.wu&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"WARM UP"),h("strong",{className:"mono"},rep.wu+" km")),
               rep.actualDistance&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"DISTANCE"),h("strong",{className:"mono"},rep.actualDistance+" km")),
-              rep.actualPace&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"PACE"),h("strong",{className:"mono"},rep.actualPace+"/km")),
+              rep.cd&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"COOL DOWN"),h("strong",{className:"mono"},rep.cd+" km")),
+              rep.totalKm&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"TOTAL"),h("strong",{className:"mono",style:{color:"var(--text)"}},rep.totalKm+" km")),
               rep.hr&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"HR"),h("strong",{className:"mono"},rep.hr+" bpm")),
               rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
+              si===0&&r.sleep&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
+              si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},stressEmoji(r.stress)+" STRESS"),h("strong",null,r.stress+"/5")),
+              rs?.some(l=>l.detail)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
+                h("summary",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600,cursor:"pointer"}},"SESSION DETAIL"),
+                h("div",{style:{marginTop:4}},
+                  rs.map((line,li)=>line.detail&&h("div",{key:li,style:{fontSize:12,marginBottom:2}},
+                    line.label&&h("span",{style:{fontWeight:600,color:line.color,marginRight:6}},line.label+":"),
+                    line.dist>0&&h("span",{className:"mono",style:{marginRight:6}},line.dist+"km"),
+                    h("span",null,line.detail)
+                  ))
+                )
+              ),
               rep.notes&&h("div",{style:{gridColumn:"1/-1"}},h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"NOTES"),h("em",{style:{color:"var(--text-muted2)",fontSize:13}},'"'+rep.notes+'"')),
-              (rep.garminGroups||[]).length>0&&h("div",{style:{gridColumn:"1/-1"}},
+              hasGroups&&h("div",{style:{gridColumn:"1/-1"}},
                 h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"GARMIN LAPS"),
                 rep.garminGroups.map((g,gi)=>h("div",{key:gi,style:{fontSize:12,marginBottom:2}},h("strong",null,g.label),": "+formatGroupStats(g)))
               )
