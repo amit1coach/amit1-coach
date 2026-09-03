@@ -254,7 +254,8 @@ const normalizePart = p => {
     _showPace:!!(p.pace||p._showPace),
     _showKm:!!(p.distance||p._showKm),
     ...(hillRows ? {hillRows: Array.isArray(hillRows) ? hillRows : Object.values(hillRows)} : {}),
-    ...(wktRows ? {wktRows: Array.isArray(wktRows) ? wktRows : Object.values(wktRows)} : {})
+    ...(wktRows ? {wktRows: Array.isArray(wktRows) ? wktRows : Object.values(wktRows)} : {}),
+    ...(p.wktPattern==="sequential" ? {wktPattern:"sequential"} : {})
   };
 };
 const normalizeSess = s => {
@@ -322,29 +323,44 @@ const getWktRows = part => {
   if(typeof wr==="object") return Object.values(wr);
   return [];
 };
-// Interleaves rep groups round-robin (in,out,in,out,in for 3×in/2×out) so unequal rep
-// counts still alternate naturally, matching how a coach actually calls out a fartlek.
-const expandWktRows = rows => {
-  const pools = rows
-    .filter(r=>(parseFloat(r.minutes)||0)>0 && (parseInt(r.reps)||0)>0)
-    .map(r=>({label:(r.label||"").trim(), minutes:parseFloat(r.minutes)||0, kind:r.kind==="rest"?"rest":"active", remaining:parseInt(r.reps)||0}));
+// Each row is {label, mode:"time"|"distance", value, reps}. "alternate" interleaves rows
+// round-robin (in,out,in,out,in for 3×in/2×out — a fartlek/speed-game feel); "sequential"
+// plays each row's reps back-to-back in list order (a progression/ladder feel). Rows can
+// mix time- and distance-based steps freely.
+const wktValidRows = rows => rows.filter(r=>(parseFloat(r.value)||0)>0 && (parseInt(r.reps)||0)>0);
+const wktRowToStep = r => r.mode==="distance"
+  ? {label:(r.label||"").trim(), durationType:"distance", meters:(parseFloat(r.value)||0)*1000}
+  : {label:(r.label||"").trim(), durationType:"time", minutes:parseFloat(r.value)||0};
+const expandWktRows = (rows, pattern="alternate") => {
+  const valid = wktValidRows(rows);
+  if(pattern==="sequential"){
+    const steps=[];
+    valid.forEach(r=>{ for(let i=0;i<(parseInt(r.reps)||0);i++) steps.push(wktRowToStep(r)); });
+    return steps;
+  }
+  const pools = valid.map(r=>({...r, remaining:parseInt(r.reps)||0}));
   const steps=[];
   let progress=true;
   while(progress){
     progress=false;
     for(const p of pools){
-      if(p.remaining>0){ steps.push({label:p.label,durationType:"time",minutes:p.minutes,intensity:p.kind}); p.remaining--; progress=true; }
+      if(p.remaining>0){ steps.push(wktRowToStep(p)); p.remaining--; progress=true; }
     }
   }
   return steps;
 };
 // One-line read-only summary of the structured rows, e.g. "3×6min In / 2×4min Out · 26 min total".
 const wktRowsSummary = part => {
-  const expanded = expandWktRows(getWktRows(part));
+  const pattern = part.wktPattern==="sequential"?"sequential":"alternate";
+  const expanded = expandWktRows(getWktRows(part), pattern);
   if(!expanded.length) return null;
-  const rows = getWktRows(part).filter(r=>(parseFloat(r.minutes)||0)>0&&(parseInt(r.reps)||0)>0);
-  const totalMin = expanded.reduce((t,s)=>t+s.minutes,0);
-  return rows.map(r=>parseInt(r.reps)+"×"+parseFloat(r.minutes)+"min "+((r.label||"").trim()||(r.kind==="rest"?"Out":"In"))).join(" / ")+" · "+totalMin+" min total";
+  const rows = wktValidRows(getWktRows(part));
+  const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
+  const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
+  const joiner = pattern==="sequential" ? " → " : " / ";
+  const label = r=>parseInt(r.reps)+"×"+parseFloat(r.value)+(r.mode==="distance"?"km":"min")+" "+((r.label||"").trim()||"Stage");
+  const totals = [totalMin>0?totalMin+" min":null, totalKm>0?totalKm.toFixed(1)+" km":null].filter(Boolean).join(" + ");
+  return rows.map(label).join(joiner)+(totals?" · "+totals+" total":"");
 };
 
 
@@ -455,37 +471,53 @@ const HillPlanRows = ({part, onChange}) => {
   );
 };
 
-// Structured rep-group rows for fartlek/interval/long parts (e.g. "3×6min In / 2×4min Out",
-// or a long run's speed-game surges) — feeds both the plan display and the Garmin .fit
-// export (see expandWktRows / sessionToFitSteps below).
+// Structured stage rows for fartlek/interval/long parts — feeds both the plan display and
+// the Garmin .fit export (see expandWktRows / sessionToFitSteps below). Each row can be
+// timed in minutes or km, repeated N times, and either interleaved with its sibling rows
+// (a fartlek/speed-game feel) or played through in order (a progression/ladder feel).
+const WKT_PATTERNS = [["alternate","Alternating"],["sequential","In order"]];
 const WktRows = ({part, onChange}) => {
-  const [defLabelA,defLabelB] = part.type==="long" ? ["Fast","Steady"] : ["In","Out"];
-  const rows = getWktRows(part).length > 0 ? getWktRows(part) : [{label:defLabelA,minutes:"",reps:"",kind:"active"},{label:defLabelB,minutes:"",reps:"",kind:"rest"}];
+  const [defLabelA,defLabelB] = (part.type==="fartlek"||part.type==="interval") ? ["In","Out"]
+    : (part.type==="long"||part.type==="tempo"||part.type==="race") ? ["Fast","Steady"]
+    : ["Work","Rest"];
+  const rows = getWktRows(part).length > 0 ? getWktRows(part) : [{label:defLabelA,mode:"time",value:"",reps:""},{label:defLabelB,mode:"time",value:"",reps:""}];
+  const pattern = part.wktPattern==="sequential" ? "sequential" : "alternate";
   const update = (i,k,v) => onChange({...part, wktRows:rows.map((r,idx)=>idx===i?{...r,[k]:v}:r)});
-  const addRow = () => onChange({...part, wktRows:[...rows,{label:"",minutes:"",reps:"",kind:"active"}]});
+  const addRow = () => onChange({...part, wktRows:[...rows,{label:"",mode:"time",value:"",reps:""}]});
   const removeRow = i => onChange({...part, wktRows:rows.filter((_,idx)=>idx!==i)});
-  const expanded = expandWktRows(rows);
-  const totalMin = expanded.reduce((t,s)=>t+s.minutes,0);
+  const expanded = expandWktRows(rows, pattern);
+  const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
+  const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
   return h("div",{style:{marginTop:6}},
-    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 50px 55px 78px 20px",gap:5,marginBottom:4,alignItems:"center"}},
+    h("div",{style:{display:"flex",gap:6,marginBottom:8}},
+      WKT_PATTERNS.map(([k,label])=>h("button",{key:k,onClick:()=>onChange({...part,wktPattern:k}),style:{padding:"3px 9px",fontSize:11,fontWeight:600,borderRadius:4,cursor:"pointer",
+        border:pattern===k?"1.5px solid var(--accent)":"0.5px solid var(--border-strong)",
+        background:pattern===k?"var(--warning-bg)":"var(--surface)",
+        color:pattern===k?"var(--warning-text)":"var(--text-muted)"
+      }},label))
+    ),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:4,alignItems:"center"}},
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Label"),
-      h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Min"),
+      h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Value"),
+      h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Unit"),
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"× Reps"),
-      h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Kind"),
       h("div")
     ),
-    rows.map((row,i)=>h("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 50px 55px 78px 20px",gap:5,marginBottom:5,alignItems:"center"}},
+    rows.map((row,i)=>h("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:5,alignItems:"center"}},
       h("input",{value:row.label||"",onChange:e=>update(i,"label",e.target.value),placeholder:i%2===0?defLabelA:defLabelB,style:{padding:"4px 6px",fontSize:12}}),
-      h("input",{type:"number",value:row.minutes||"",onChange:e=>update(i,"minutes",e.target.value),placeholder:"6",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
-      h("input",{type:"number",value:row.reps||"",onChange:e=>update(i,"reps",e.target.value),placeholder:"3",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
-      h("select",{value:row.kind||"active",onChange:e=>update(i,"kind",e.target.value),style:{padding:"3px 4px",fontSize:11}},
-        h("option",{value:"active"},"Work"),h("option",{value:"rest"},"Recov.")
+      h("input",{type:"number",value:row.value||"",onChange:e=>update(i,"value",e.target.value),placeholder:row.mode==="distance"?"1.5":"6",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+      h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)"}},
+        h("button",{onClick:()=>update(i,"mode","time"),style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:row.mode!=="distance"?"var(--accent)":"var(--surface)",color:row.mode!=="distance"?"var(--accent-text)":"var(--text-muted)"}},"min"),
+        h("button",{onClick:()=>update(i,"mode","distance"),style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:row.mode==="distance"?"var(--accent)":"var(--surface)",color:row.mode==="distance"?"var(--accent-text)":"var(--text-muted)"}},"km")
       ),
+      h("input",{type:"number",value:row.reps||"",onChange:e=>update(i,"reps",e.target.value),placeholder:"1",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       rows.length>1?h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:14,lineHeight:1,padding:0}},"×"):h("div")
     )),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
       h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
-      totalMin>0&&h("span",{style:{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}},expanded.length+" steps · "+totalMin+" min total")
+      (totalMin>0||totalKm>0)&&h("span",{style:{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}},
+        expanded.length+" steps"+(totalMin>0?" · "+totalMin+" min":"")+(totalKm>0?" · "+totalKm.toFixed(1)+" km":"")
+      )
     )
   );
 };
@@ -493,7 +525,7 @@ const WktRows = ({part, onChange}) => {
 const PartEditor = ({part,onChange,onRemove,index,total}) => {
   const wt=WT[part.type]||WT.easy;
   const isHills = part.type==="hills";
-  const isWkt = part.type==="fartlek"||part.type==="interval"||part.type==="long";
+  const isWkt = !isHills;
   const isTime = !isHills && part.mode==="time";
   return h("div",{style:{display:"flex",alignItems:"flex-start",gap:6,marginBottom:6,padding:"8px 10px",borderRadius:6,background:"var(--surface)",border:`0.5px solid ${wt.color}44`,borderLeft:`3px solid ${wt.color}`}},
     h("div",{style:{flex:1}},
@@ -749,7 +781,6 @@ const garminFillTypeData = (type, existingTypeData, parsed) => {
 // workout_step) and the CRC-16 algorithm used by the FIT protocol.
 const FIT_EPOCH_OFFSET = 631065600; // seconds between Unix epoch and FIT epoch (1989-12-31T00:00:00Z)
 const FIT_BASE_TYPE = { enum:0x00, uint16:0x84, uint32:0x86, uint32z:0x8C, string:0x07 };
-const FIT_INTENSITY = { active:0, rest:1, warmup:2, cooldown:3 };
 const FIT_CRC_TABLE = [0x0000,0xCC01,0xD801,0x1400,0xF001,0x3C00,0x2800,0xE401,0xA001,0x6C00,0x7800,0xB401,0x5000,0x9C01,0x8801,0x4400];
 const fitCrc16 = bytes => {
   let crc=0;
@@ -768,7 +799,7 @@ class FitWriter {
   // Always leaves at least one trailing 0x00 so the field is null-terminated even at max length.
   str(s,len){ const enc=new TextEncoder().encode(String(s||"")).slice(0,len-1); for(let i=0;i<len;i++) this.u8(i<enc.length?enc[i]:0); }
 }
-// steps: [{label, durationType:"time"|"distance"|"open", minutes, meters, intensity:"active"|"rest"|"warmup"|"cooldown"}]
+// steps: [{label, durationType:"time"|"distance"|"open", minutes, meters}]
 const encodeFitWorkout = (name, steps) => {
   const NAME_LEN=20, STEP_NAME_LEN=16;
   const w=new FitWriter();
@@ -811,7 +842,7 @@ const encodeFitWorkout = (name, steps) => {
     else if(step.durationType==="distance"){ w.u8(1); w.u32(Math.round(step.meters*100)); }
     else { w.u8(5); w.u32(0); } // open — athlete presses lap to advance
     w.u8(2); w.u32(0); // target_type = open, no target value
-    w.u8(FIT_INTENSITY[step.intensity]!=null?FIT_INTENSITY[step.intensity]:FIT_INTENSITY.active);
+    w.u8(0); // intensity = active — the step name/label is what actually guides the athlete
   });
   const dataBytes=w.bytes;
   const header=new FitWriter();
@@ -823,28 +854,26 @@ const encodeFitWorkout = (name, steps) => {
   fileBytes.push(fileCrc&0xFF,(fileCrc>>8)&0xFF);
   return new Uint8Array(fileBytes);
 };
-// Builds one workout_step per plan part — expanding fartlek/interval rep-groups into
-// alternating steps, and using an open/manual-lap step for warm-up, cool-down, and any
-// part with no explicit duration or distance.
+// Builds one workout_step per plan part — expanding rep-group rows (any type except hills,
+// which has its own distance-rep structure) into their alternating or sequential steps, and
+// a single time/distance/open step for anything without rows. Warm-up and cool-down km are
+// deliberately left out of the export: they're run before/after the watch workout, not part of it.
 const partToFitStep = part => {
   const wt=WT[part.type]||WT.easy;
-  const wktRows=getWktRows(part).filter(r=>(parseFloat(r.minutes)||0)>0&&(parseInt(r.reps)||0)>0);
-  if((part.type==="fartlek"||part.type==="interval"||part.type==="long")&&wktRows.length>0) return expandWktRows(wktRows);
+  const wktRows=wktValidRows(getWktRows(part));
+  if(part.type!=="hills"&&wktRows.length>0) return expandWktRows(wktRows, part.wktPattern==="sequential"?"sequential":"alternate");
   const label=(part.notes||wt.label).slice(0,15);
-  const restIntensity = part.type==="recovery"?"rest":"active";
   if(part.type==="hills"){
     const dist=parseFloat(part.distance)||0;
-    return [dist>0?{label,durationType:"distance",meters:dist*1000,intensity:"active"}:{label,durationType:"open",intensity:"active"}];
+    return [dist>0?{label,durationType:"distance",meters:dist*1000}:{label,durationType:"open"}];
   }
-  if(part.mode==="time"&&parseFloat(part.duration)>0) return [{label,durationType:"time",minutes:parseFloat(part.duration),intensity:restIntensity}];
-  if(part.mode!=="time"&&parseFloat(part.distance)>0) return [{label,durationType:"distance",meters:parseFloat(part.distance)*1000,intensity:restIntensity}];
-  return [{label,durationType:"open",intensity:restIntensity}];
+  if(part.mode==="time"&&parseFloat(part.duration)>0) return [{label,durationType:"time",minutes:parseFloat(part.duration)}];
+  if(part.mode!=="time"&&parseFloat(part.distance)>0) return [{label,durationType:"distance",meters:parseFloat(part.distance)*1000}];
+  return [{label,durationType:"open"}];
 };
 const sessionToFitSteps = session => {
   const steps=[];
-  if(parseFloat(session.wu)>0) steps.push({label:"Warm up",durationType:"open",intensity:"warmup"});
   (session.parts||[]).forEach(part=>{ steps.push(...partToFitStep(part)); });
-  if(parseFloat(session.cd)>0) steps.push({label:"Cool down",durationType:"open",intensity:"cooldown"});
   return steps;
 };
 const downloadFitWorkout = (filename, bytes) => {
@@ -1507,7 +1536,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                           h("span",{className:"wtb",style:{background:wt.bg,color:wt.dark,border:`0.5px solid ${wt.color}44`,fontSize:11}},wt.label),
                           part.type==="hills"&&hillRowsSummary(part)
                             ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},hillRowsSummary(part))
-                            : (part.type==="fartlek"||part.type==="interval"||part.type==="long")&&wktRowsSummary(part)
+                            : part.type!=="hills"&&wktRowsSummary(part)
                               ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},wktRowsSummary(part))
                               : part.mode==="time"
                                 ? part.duration&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},part.duration+" min"+(part.distance?" · ~"+part.distance+"km":""))
