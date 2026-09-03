@@ -338,6 +338,14 @@ const expandWktRows = rows => {
   }
   return steps;
 };
+// One-line read-only summary of the structured rows, e.g. "3×6min In / 2×4min Out · 26 min total".
+const wktRowsSummary = part => {
+  const expanded = expandWktRows(getWktRows(part));
+  if(!expanded.length) return null;
+  const rows = getWktRows(part).filter(r=>(parseFloat(r.minutes)||0)>0&&(parseInt(r.reps)||0)>0);
+  const totalMin = expanded.reduce((t,s)=>t+s.minutes,0);
+  return rows.map(r=>parseInt(r.reps)+"×"+parseFloat(r.minutes)+"min "+((r.label||"").trim()||(r.kind==="rest"?"Out":"In"))).join(" / ")+" · "+totalMin+" min total";
+};
 
 
 // ── Small UI components ───────────────────────────────────────────────────────
@@ -447,10 +455,12 @@ const HillPlanRows = ({part, onChange}) => {
   );
 };
 
-// Structured "In"/"Out" rep-group rows for fartlek/interval parts — feeds both the plan
-// display and the Garmin .fit export (see expandWktRows / sessionToFitSteps below).
+// Structured rep-group rows for fartlek/interval/long parts (e.g. "3×6min In / 2×4min Out",
+// or a long run's speed-game surges) — feeds both the plan display and the Garmin .fit
+// export (see expandWktRows / sessionToFitSteps below).
 const WktRows = ({part, onChange}) => {
-  const rows = getWktRows(part).length > 0 ? getWktRows(part) : [{label:"In",minutes:"",reps:"",kind:"active"},{label:"Out",minutes:"",reps:"",kind:"rest"}];
+  const [defLabelA,defLabelB] = part.type==="long" ? ["Fast","Steady"] : ["In","Out"];
+  const rows = getWktRows(part).length > 0 ? getWktRows(part) : [{label:defLabelA,minutes:"",reps:"",kind:"active"},{label:defLabelB,minutes:"",reps:"",kind:"rest"}];
   const update = (i,k,v) => onChange({...part, wktRows:rows.map((r,idx)=>idx===i?{...r,[k]:v}:r)});
   const addRow = () => onChange({...part, wktRows:[...rows,{label:"",minutes:"",reps:"",kind:"active"}]});
   const removeRow = i => onChange({...part, wktRows:rows.filter((_,idx)=>idx!==i)});
@@ -465,7 +475,7 @@ const WktRows = ({part, onChange}) => {
       h("div")
     ),
     rows.map((row,i)=>h("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 50px 55px 78px 20px",gap:5,marginBottom:5,alignItems:"center"}},
-      h("input",{value:row.label||"",onChange:e=>update(i,"label",e.target.value),placeholder:i%2===0?"In":"Out",style:{padding:"4px 6px",fontSize:12}}),
+      h("input",{value:row.label||"",onChange:e=>update(i,"label",e.target.value),placeholder:i%2===0?defLabelA:defLabelB,style:{padding:"4px 6px",fontSize:12}}),
       h("input",{type:"number",value:row.minutes||"",onChange:e=>update(i,"minutes",e.target.value),placeholder:"6",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       h("input",{type:"number",value:row.reps||"",onChange:e=>update(i,"reps",e.target.value),placeholder:"3",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       h("select",{value:row.kind||"active",onChange:e=>update(i,"kind",e.target.value),style:{padding:"3px 4px",fontSize:11}},
@@ -483,7 +493,7 @@ const WktRows = ({part, onChange}) => {
 const PartEditor = ({part,onChange,onRemove,index,total}) => {
   const wt=WT[part.type]||WT.easy;
   const isHills = part.type==="hills";
-  const isWkt = part.type==="fartlek"||part.type==="interval";
+  const isWkt = part.type==="fartlek"||part.type==="interval"||part.type==="long";
   const isTime = !isHills && part.mode==="time";
   return h("div",{style:{display:"flex",alignItems:"flex-start",gap:6,marginBottom:6,padding:"8px 10px",borderRadius:6,background:"var(--surface)",border:`0.5px solid ${wt.color}44`,borderLeft:`3px solid ${wt.color}`}},
     h("div",{style:{flex:1}},
@@ -819,7 +829,7 @@ const encodeFitWorkout = (name, steps) => {
 const partToFitStep = part => {
   const wt=WT[part.type]||WT.easy;
   const wktRows=getWktRows(part).filter(r=>(parseFloat(r.minutes)||0)>0&&(parseInt(r.reps)||0)>0);
-  if((part.type==="fartlek"||part.type==="interval")&&wktRows.length>0) return expandWktRows(wktRows);
+  if((part.type==="fartlek"||part.type==="interval"||part.type==="long")&&wktRows.length>0) return expandWktRows(wktRows);
   const label=(part.notes||wt.label).slice(0,15);
   const restIntensity = part.type==="recovery"?"rest":"active";
   if(part.type==="hills"){
@@ -1497,9 +1507,11 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                           h("span",{className:"wtb",style:{background:wt.bg,color:wt.dark,border:`0.5px solid ${wt.color}44`,fontSize:11}},wt.label),
                           part.type==="hills"&&hillRowsSummary(part)
                             ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},hillRowsSummary(part))
-                            : part.mode==="time"
-                              ? part.duration&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},part.duration+" min"+(part.distance?" · ~"+part.distance+"km":""))
-                              : part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
+                            : (part.type==="fartlek"||part.type==="interval"||part.type==="long")&&wktRowsSummary(part)
+                              ? h("span",{className:"mono",style:{fontSize:12,fontWeight:500,color:wt.dark}},wktRowsSummary(part))
+                              : part.mode==="time"
+                                ? part.duration&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},part.duration+" min"+(part.distance?" · ~"+part.distance+"km":""))
+                                : part.distance&&h("span",{className:"mono",style:{fontSize:12,fontWeight:500}},"Total volume: "+part.distance+" km"),
                           part.type!=="hills"&&part.pace&&part._showPace!==false&&h("span",{className:"mono",style:{fontSize:11,color:"var(--text-muted)"}},"@ "+part.pace+"/km")
                         ),
                         part.notes&&h("div",{style:{fontSize:11,color:"var(--text-muted2)"}},part.notes)
