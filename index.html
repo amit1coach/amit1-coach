@@ -228,6 +228,14 @@ const monthKey = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).
 const prevMonthKey = (d=new Date()) => monthKey(new Date(d.getFullYear(), d.getMonth()-1, 1));
 const monthLabel = (d=new Date()) => d.toLocaleDateString("en-GB",{month:"long",year:"numeric"});
 const initials = n => n.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+const slugify = s => (s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"") || "athlete";
+// Actual calendar date for a day within a given displayed week (weekOff), so exported
+// filenames don't collide across athletes or across the same weekday in different weeks.
+const dayDateStr = (weekOff, day) => {
+  const d = getWeekStart(weekOff);
+  d.setDate(d.getDate() + DAYS_IDX[day]);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
 const ccColor  = p => p===null?{bg:"var(--neutral-bg)",color:"var(--text-muted)"}:p>=80?{bg:"var(--success-bg)",color:"var(--success-text)"}:p>=50?{bg:"var(--warning-bg)",color:"var(--warning-text)"}:{bg:"var(--danger-bg)",color:"var(--danger-text)"};
 const newPart  = (type="easy") => ({type,mode:"distance",distance:"",duration:"",pace:"",notes:"",_showPace:false,_showKm:false});
 const newSess  = () => ({parts:[newPart()],wu:"",cd:""});
@@ -1495,7 +1503,7 @@ const repSummary = (rep, parts) => {
   return lines;
 };
 
-const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin}) => {
+const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin,athleteName}) => {
   const [editPlan,setEditPlan]=useState(false);
   const [repDay,setRepDay]=useState(null);
 
@@ -1549,7 +1557,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                     sessions.length===1&&dailyKm>0&&h("div",{style:{fontSize:11,color:"var(--text-muted)",marginTop:4}},"Total KMs: ",h("strong",{className:"mono"},dailyKm.toFixed(1)+" km")),
                     h("button",{className:"btn btns",style:{marginTop:6,fontSize:11},onClick:()=>{
                       const wkName=day+" "+(WT[sessFirstType(sess)]?.label||"Workout")+(sessions.length>1?" S"+(si+1):"");
-                      const file=day.toLowerCase()+(sessions.length>1?"_session"+(si+1):"")+"_workout.fit";
+                      const file=slugify(athleteName)+"_"+dayDateStr(weekOff,day)+"_"+day.toLowerCase()+(sessions.length>1?"-session"+(si+1):"")+".fit";
                       downloadFitWorkout(file, encodeFitWorkout(wkName, sessionToFitSteps(sess)));
                     }},"⌚  Export to Garmin (.fit)"),
                     rep&&h("div",{style:{marginTop:6,paddingTop:6,borderTop:"0.5px solid var(--neutral-bg)"}},
@@ -1830,7 +1838,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       )
     ),
     loading?h(Spinner):null,
-    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin}),
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:athlete.name}),
     !loading&&tab==="reports"&&h("div",null,
       DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
         const d=plan[day],r=reports[day],sessions=d?.sessions||[];
@@ -2015,7 +2023,7 @@ const AthleteHome = ({user,onSignOut}) => {
       )
     ),
     loading?h(Spinner):null,
-    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin}),
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:profile.name}),
     !loading&&tab==="reports"&&h("div",null,
       DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
         const d=plan[day],r=reports[day],sessions=d?.sessions||[];
