@@ -504,6 +504,7 @@ const WktRows = ({part, onChange}) => {
         color:pattern===k?"var(--warning-text)":"var(--text-muted)"
       }},label))
     ),
+    h("div",{style:{fontSize:10,color:"var(--text-muted)",marginBottom:8}},"Interleaves the rows below with each other. For phases that should run one after another (not mixed together), use separate Parts instead of extra rows here."),
     h("div",{style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:4,alignItems:"center"}},
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Label"),
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Value"),
@@ -783,8 +784,11 @@ const garminFillTypeData = (type, existingTypeData, parsed) => {
 // ── Garmin FIT workout export ───────────────────────────────────────────────────
 // Builds a minimal, standards-conformant .fit "workout" file (file_id + workout +
 // workout_step messages) entirely client-side, so a coach's prescribed session can be
-// downloaded and imported straight into Garmin Connect (Training > Workouts > Import),
-// which then syncs it to the athlete's watch like any other structured workout.
+// downloaded and copied straight onto the athlete's watch (connect it over USB and drop
+// the file into the Garmin/NewFiles folder) — the watch picks it up as a structured
+// workout on its next sync. Garmin Connect's website does NOT accept workout .fit files
+// through its "Import Data" uploader (that's activity-files-only), so this file is meant
+// for the device's own file system, not a browser upload.
 // Field numbers/enums verified against Garmin's FIT profile (file_id, workout,
 // workout_step) and the CRC-16 algorithm used by the FIT protocol.
 const FIT_EPOCH_OFFSET = 631065600; // seconds between Unix epoch and FIT epoch (1989-12-31T00:00:00Z)
@@ -1555,7 +1559,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                       );
                     }),
                     sessions.length===1&&dailyKm>0&&h("div",{style:{fontSize:11,color:"var(--text-muted)",marginTop:4}},"Total KMs: ",h("strong",{className:"mono"},dailyKm.toFixed(1)+" km")),
-                    h("button",{className:"btn btns",style:{marginTop:6,fontSize:11},onClick:()=>{
+                    h("button",{className:"btn btns",style:{marginTop:6,fontSize:11},title:"Connect your watch by USB and copy this file into the Garmin/NewFiles folder — it'll show up as a workout next sync. (Garmin Connect's website can't import workout files, only activities.)",onClick:()=>{
                       const wkName=day+" "+(WT[sessFirstType(sess)]?.label||"Workout")+(sessions.length>1?" S"+(si+1):"");
                       const file=slugify(athleteName)+"_"+dayDateStr(weekOff,day)+"_"+day.toLowerCase()+(sessions.length>1?"-session"+(si+1):"")+".fit";
                       downloadFitWorkout(file, encodeFitWorkout(wkName, sessionToFitSteps(sess)));
