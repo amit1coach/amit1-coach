@@ -590,10 +590,22 @@ const PartEditor = ({part,onChange,onRemove,onDuplicate,index,total}) => {
 
 const SessionEditor = ({session,onChange,onRemove,index,total}) => {
   const parts=session.parts||[newPart()];
+  const [selected,setSelected]=useState([]);
   const updatePart=(i,p)=>{const np=[...parts];np[i]=p;onChange({...session,parts:np});};
   const addPart=()=>onChange({...session,parts:[...parts,newPart()]});
   const removePart=i=>onChange({...session,parts:parts.filter((_,idx)=>idx!==i)});
   const duplicatePart=i=>{const np=[...parts];np.splice(i+1,0,JSON.parse(JSON.stringify(parts[i])));onChange({...session,parts:np});};
+  const toggleSelect=i=>setSelected(s=>s.includes(i)?s.filter(x=>x!==i):[...s,i].sort((a,b)=>a-b));
+  // Clones every currently-checked part, in their original order, and drops the whole
+  // block in right after the last one selected — lets a coach build one "round" of
+  // several parts once, check them, and repeat the round as many times as needed.
+  const duplicateSelected=()=>{
+    if(selected.length===0) return;
+    const block=selected.map(i=>JSON.parse(JSON.stringify(parts[i])));
+    const insertAt=Math.max(...selected)+1;
+    onChange({...session,parts:[...parts.slice(0,insertAt),...block,...parts.slice(insertAt)]});
+    setSelected([]);
+  };
   const km=sessTotalKm(session);
   return h("div",{className:"sblk",style:{borderLeft:"3px solid var(--accent)",marginBottom:10}},
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}},
@@ -603,6 +615,7 @@ const SessionEditor = ({session,onChange,onRemove,index,total}) => {
       ),
       h("div",{style:{display:"flex",alignItems:"center",gap:6}},
         h("button",{onClick:addPart,className:"btn btns"},"+  Add part"),
+        selected.length>0&&h("button",{onClick:duplicateSelected,className:"btn btns"},"⧉  Duplicate selected ("+selected.length+")"),
         total>1&&h("button",{onClick:onRemove,style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:18,lineHeight:1}},"×")
       )
     ),
@@ -610,7 +623,11 @@ const SessionEditor = ({session,onChange,onRemove,index,total}) => {
       h("label",{className:"lbl"},"Warm up KMs (run + drills + strides)"),
       h("input",{type:"number",value:session.wu||"",onChange:e=>onChange({...session,wu:e.target.value}),placeholder:"e.g. 3",className:"mono",step:"0.1",style:{maxWidth:120}})
     ),
-    parts.map((part,i)=>h(PartEditor,{key:i,part,index:i,total:parts.length,onChange:p=>updatePart(i,p),onRemove:()=>removePart(i),onDuplicate:()=>duplicatePart(i)})),
+    parts.length>1&&h("div",{style:{fontSize:10,color:"var(--text-muted)",marginBottom:4}},"Check parts below to duplicate them together as one block (e.g. a round that repeats)."),
+    parts.map((part,i)=>h("div",{key:i,style:{display:"flex",gap:6,alignItems:"flex-start"}},
+      h("input",{type:"checkbox",checked:selected.includes(i),onChange:()=>toggleSelect(i),title:"Select for group duplicate",style:{marginTop:14,flexShrink:0}}),
+      h("div",{style:{flex:1,minWidth:0}},h(PartEditor,{part,index:i,total:parts.length,onChange:p=>updatePart(i,p),onRemove:()=>removePart(i),onDuplicate:()=>duplicatePart(i)}))
+    )),
     h("div",{style:{marginTop:4,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)"}},
       h("label",{className:"lbl"},"Cool down KMs inc. strides or accs"),
       h("input",{type:"number",value:session.cd||"",onChange:e=>onChange({...session,cd:e.target.value}),placeholder:"e.g. 2",className:"mono",step:"0.1",style:{maxWidth:120}})
