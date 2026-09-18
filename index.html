@@ -494,9 +494,22 @@ const WktRows = ({part, onChange}) => {
     : ["Work","Rest"];
   const rows = getWktRows(part).length > 0 ? getWktRows(part) : [{label:defLabelA,mode:"time",value:"",reps:""},{label:defLabelB,mode:"time",value:"",reps:""}];
   const pattern = part.wktPattern==="sequential" ? "sequential" : "alternate";
-  const update = (i,k,v) => onChange({...part, wktRows:rows.map((r,idx)=>idx===i?{...r,[k]:v}:r)});
-  const addRow = () => onChange({...part, wktRows:[...rows,{label:"",mode:"time",value:"",reps:""}]});
-  const removeRow = i => onChange({...part, wktRows:rows.filter((_,idx)=>idx!==i)});
+  // Keep part.distance (the number sessTotalKm actually sums) in sync with the rows,
+  // the same way HillPlanRows does — otherwise the day/session "Total KMs" header can
+  // silently drift from what the rows below compute.
+  const kmOf = rs => expandWktRows(rs, pattern).reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
+  const update = (i,k,v) => {
+    const nr=rows.map((r,idx)=>idx===i?{...r,[k]:v}:r);
+    onChange({...part, wktRows:nr, distance:kmOf(nr).toFixed(3)});
+  };
+  const addRow = () => {
+    const nr=[...rows,{label:"",mode:"time",value:"",reps:""}];
+    onChange({...part, wktRows:nr, distance:kmOf(nr).toFixed(3)});
+  };
+  const removeRow = i => {
+    const nr=rows.filter((_,idx)=>idx!==i);
+    onChange({...part, wktRows:nr, distance:kmOf(nr).toFixed(3)});
+  };
   const expanded = expandWktRows(rows, pattern);
   const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
   const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
