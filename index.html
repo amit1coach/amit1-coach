@@ -267,7 +267,7 @@ const normalizePart = p => {
     _showKm:!!(p.distance||p._showKm),
     ...(hillRows ? {hillRows: Array.isArray(hillRows) ? hillRows : Object.values(hillRows)} : {}),
     ...(wktRows ? {wktRows: Array.isArray(wktRows) ? wktRows : Object.values(wktRows)} : {}),
-    ...(p.wktPattern==="sequential" ? {wktPattern:"sequential"} : {})
+    ...(p.wktPattern==="sequential"||p.wktPattern==="grouped" ? {wktPattern:p.wktPattern} : {})
   };
 };
 const normalizeSess = s => {
@@ -354,36 +354,42 @@ const wktRowToStep = r => r.mode==="distance"
   : r.mode==="meters"
     ? {label:(r.label||"").trim(), durationType:"distance", meters:parseFloat(r.value)||0}
     : {label:(r.label||"").trim(), durationType:"time", minutes:parseMin(r.value)};
-const expandWktRows = (rows, pattern="alternate") => {
+// "grouped" is the in-between: a row with mix:true joins the row above it into one alternating
+// group, and groups play one after another (e.g. 16k Base, 2k Fast, then 3×[1k Steady / 1k Fast]).
+const wktPatternOf = part => part.wktPattern==="sequential"||part.wktPattern==="grouped" ? part.wktPattern : "alternate";
+const wktGroups = (rows, pattern) => {
   const valid = wktValidRows(rows);
-  if(pattern==="sequential"){
-    const steps=[];
-    valid.forEach(r=>{ for(let i=0;i<(parseInt(r.reps)||0);i++) steps.push(wktRowToStep(r)); });
-    return steps;
-  }
-  const pools = valid.map(r=>({...r, remaining:parseInt(r.reps)||0}));
+  if(pattern==="alternate") return valid.length ? [valid] : [];
+  if(pattern==="sequential") return valid.map(r=>[r]);
+  const groups=[];
+  valid.forEach((r,i)=>{ if(i>0&&r.mix) groups[groups.length-1].push(r); else groups.push([r]); });
+  return groups;
+};
+const expandWktRows = (rows, pattern="alternate") => {
   const steps=[];
-  let progress=true;
-  while(progress){
-    progress=false;
-    for(const p of pools){
-      if(p.remaining>0){ steps.push(wktRowToStep(p)); p.remaining--; progress=true; }
+  wktGroups(rows, pattern).forEach(group=>{
+    const pools = group.map(r=>({...r, remaining:parseInt(r.reps)||0}));
+    let progress=true;
+    while(progress){
+      progress=false;
+      for(const p of pools){
+        if(p.remaining>0){ steps.push(wktRowToStep(p)); p.remaining--; progress=true; }
+      }
     }
-  }
+  });
   return steps;
 };
 // One-line read-only summary of the structured rows, e.g. "3×6min In / 2×4min Out · 26 min total".
 const wktRowsSummary = part => {
-  const pattern = part.wktPattern==="sequential"?"sequential":"alternate";
+  const pattern = wktPatternOf(part);
   const expanded = expandWktRows(getWktRows(part), pattern);
   if(!expanded.length) return null;
-  const rows = wktValidRows(getWktRows(part));
+  const groups = wktGroups(getWktRows(part), pattern);
   const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
   const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
-  const joiner = pattern==="sequential" ? " → " : " / ";
   const label = r=>parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+" "+((r.label||"").trim()||"Stage");
   const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?totalKm.toFixed(1)+" km":null].filter(Boolean).join(" + ");
-  return rows.map(label).join(joiner)+(totals?" · "+totals+" total":"");
+  return groups.map(g=>g.map(label).join(" / ")).join(" → ")+(totals?" · "+totals+" total":"");
 };
 
 
@@ -498,7 +504,12 @@ const HillPlanRows = ({part, onChange}) => {
 // the Garmin .fit export (see expandWktRows / sessionToFitSteps below). Each row can be
 // timed in minutes or km, repeated N times, and either interleaved with its sibling rows
 // (a fartlek/speed-game feel) or played through in order (a progression/ladder feel).
-const WKT_PATTERNS = [["alternate","Alternating"],["sequential","In order"]];
+const WKT_PATTERNS = [["alternate","Alternating"],["sequential","In order"],["grouped","Mixed groups"]];
+const WKT_PATTERN_HINTS = {
+  alternate:"Interleaves all the rows below with each other (a fartlek/speed-game feel).",
+  sequential:"Plays each row's reps in order, one row after another (a progression/ladder feel).",
+  grouped:"Rows run in order, except a row marked “Alternate with row above” joins it in one alternating group. E.g. 16k Base, 2k Fast, then 1k Steady ×3 with 1k Fast ×3 marked to alternate."
+};
 const WktRows = ({part, onChange}) => {
   const [defLabelA,defLabelB] = (part.type==="fartlek"||part.type==="interval") ? ["In","Out"]
     : (part.type==="long"||part.type==="tempo"||part.type==="race") ? ["Fast","Steady"]
@@ -511,7 +522,7 @@ const WktRows = ({part, onChange}) => {
   const rows = distMode==="meters"
     ? rawRows.map(r=>r.mode==="distance"?{...r,mode:"meters",value:r.value===""||r.value==null?"":String(Math.round((parseFloat(r.value)||0)*1e6)/1e3)}:r)
     : rawRows;
-  const pattern = part.wktPattern==="sequential" ? "sequential" : "alternate";
+  const pattern = wktPatternOf(part);
   // Keep part.distance (the number sessTotalKm actually sums) in sync with the rows,
   // the same way HillPlanRows does — otherwise the day/session "Total KMs" header can
   // silently drift from what the rows below compute.
@@ -539,7 +550,7 @@ const WktRows = ({part, onChange}) => {
         color:pattern===k?"var(--warning-text)":"var(--text-muted)"
       }},label))
     ),
-    h("div",{style:{fontSize:10,color:"var(--text-muted)",marginBottom:8}},"Interleaves the rows below with each other. For phases that should run one after another (not mixed together), use separate Parts instead of extra rows here."),
+    h("div",{style:{fontSize:10,color:"var(--text-muted)",marginBottom:8}},WKT_PATTERN_HINTS[pattern]),
     h("div",{style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:4,alignItems:"center"}},
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Label"),
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Value"),
@@ -547,7 +558,12 @@ const WktRows = ({part, onChange}) => {
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"× Reps"),
       h("div")
     ),
-    rows.map((row,i)=>h("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:5,alignItems:"center"}},
+    rows.map((row,i)=>h(Fragment,{key:i},
+      pattern==="grouped"&&i>0&&h("label",{style:{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--text-muted)",margin:"2px 0 3px 8px",cursor:"pointer"}},
+        h("input",{type:"checkbox",checked:!!row.mix,onChange:e=>update(i,"mix",e.target.checked)}),
+        "⇄ Alternate with row above"
+      ),
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:5,alignItems:"center"}},
       h("input",{value:row.label||"",onChange:e=>update(i,"label",e.target.value),placeholder:i%2===0?defLabelA:defLabelB,style:{padding:"4px 6px",fontSize:12}}),
       row.mode===distMode
         ? h("input",{type:"number",value:row.value||"",onChange:e=>update(i,"value",e.target.value),placeholder:distMode==="meters"?"1000":"1.5",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}})
@@ -558,7 +574,7 @@ const WktRows = ({part, onChange}) => {
       ),
       h("input",{type:"number",value:row.reps||"",onChange:e=>update(i,"reps",e.target.value),placeholder:"1",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       rows.length>1?h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:14,lineHeight:1,padding:0}},"×"):h("div")
-    )),
+    ))),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
       h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
       (totalMin>0||totalKm>0)&&h("span",{style:{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}},
@@ -931,7 +947,7 @@ const encodeFitWorkout = (name, steps) => {
 const partToFitStep = part => {
   const wt=WT[part.type]||WT.easy;
   const wktRows=wktValidRows(getWktRows(part));
-  if(part.type!=="hills"&&wktRows.length>0) return expandWktRows(wktRows, part.wktPattern==="sequential"?"sequential":"alternate");
+  if(part.type!=="hills"&&wktRows.length>0) return expandWktRows(wktRows, wktPatternOf(part));
   const label=(part.notes||wt.label).slice(0,15);
   if(part.type==="hills"){
     const dist=parseFloat(part.distance)||0;
