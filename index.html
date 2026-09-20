@@ -339,10 +339,21 @@ const getWktRows = part => {
 // round-robin (in,out,in,out,in for 3×in/2×out — a fartlek/speed-game feel); "sequential"
 // plays each row's reps back-to-back in list order (a progression/ladder feel). Rows can
 // mix time- and distance-based steps freely.
-const wktValidRows = rows => rows.filter(r=>(parseFloat(r.value)||0)>0 && (parseInt(r.reps)||0)>0);
+// Minutes can be typed as "1.5" or "1:30" (m:ss); everything downstream works in decimal minutes.
+const parseMin = v => {
+  const s=String(v==null?"":v).trim();
+  if(s.includes(":")){ const [m,sec]=s.split(":"); return (parseFloat(m)||0)+(parseFloat(sec)||0)/60; }
+  return parseFloat(s)||0;
+};
+const fmtMin = m => { const t=Math.round(m*60), mm=Math.floor(t/60), ss=t%60; return ss?mm+":"+String(ss).padStart(2,"0"):String(mm); };
+// Row units: "time" (min), "distance" (km), "meters" (m — used by Intervals parts).
+const wktRowValue = r => r.mode==="time" ? parseMin(r.value) : (parseFloat(r.value)||0);
+const wktValidRows = rows => rows.filter(r=>wktRowValue(r)>0 && (parseInt(r.reps)||0)>0);
 const wktRowToStep = r => r.mode==="distance"
   ? {label:(r.label||"").trim(), durationType:"distance", meters:(parseFloat(r.value)||0)*1000}
-  : {label:(r.label||"").trim(), durationType:"time", minutes:parseFloat(r.value)||0};
+  : r.mode==="meters"
+    ? {label:(r.label||"").trim(), durationType:"distance", meters:parseFloat(r.value)||0}
+    : {label:(r.label||"").trim(), durationType:"time", minutes:parseMin(r.value)};
 const expandWktRows = (rows, pattern="alternate") => {
   const valid = wktValidRows(rows);
   if(pattern==="sequential"){
@@ -370,8 +381,8 @@ const wktRowsSummary = part => {
   const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
   const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
   const joiner = pattern==="sequential" ? " → " : " / ";
-  const label = r=>parseInt(r.reps)+"×"+parseFloat(r.value)+(r.mode==="distance"?"km":"min")+" "+((r.label||"").trim()||"Stage");
-  const totals = [totalMin>0?totalMin+" min":null, totalKm>0?totalKm.toFixed(1)+" km":null].filter(Boolean).join(" + ");
+  const label = r=>parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+" "+((r.label||"").trim()||"Stage");
+  const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?totalKm.toFixed(1)+" km":null].filter(Boolean).join(" + ");
   return rows.map(label).join(joiner)+(totals?" · "+totals+" total":"");
 };
 
@@ -492,7 +503,14 @@ const WktRows = ({part, onChange}) => {
   const [defLabelA,defLabelB] = (part.type==="fartlek"||part.type==="interval") ? ["In","Out"]
     : (part.type==="long"||part.type==="tempo"||part.type==="race") ? ["Fast","Steady"]
     : ["Work","Rest"];
-  const rows = getWktRows(part).length > 0 ? getWktRows(part) : [{label:defLabelA,mode:"time",value:"",reps:""},{label:defLabelB,mode:"time",value:"",reps:""}];
+  // Intervals are written in meters; older interval rows saved in km are converted on the fly
+  // (and written back the next time the row is edited).
+  const distMode = part.type==="interval" ? "meters" : "distance";
+  const distUnit = distMode==="meters" ? "m" : "km";
+  const rawRows = getWktRows(part).length > 0 ? getWktRows(part) : [{label:defLabelA,mode:"time",value:"",reps:""},{label:defLabelB,mode:"time",value:"",reps:""}];
+  const rows = distMode==="meters"
+    ? rawRows.map(r=>r.mode==="distance"?{...r,mode:"meters",value:r.value===""||r.value==null?"":String(Math.round((parseFloat(r.value)||0)*1e6)/1e3)}:r)
+    : rawRows;
   const pattern = part.wktPattern==="sequential" ? "sequential" : "alternate";
   // Keep part.distance (the number sessTotalKm actually sums) in sync with the rows,
   // the same way HillPlanRows does — otherwise the day/session "Total KMs" header can
@@ -531,10 +549,12 @@ const WktRows = ({part, onChange}) => {
     ),
     rows.map((row,i)=>h("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:5,alignItems:"center"}},
       h("input",{value:row.label||"",onChange:e=>update(i,"label",e.target.value),placeholder:i%2===0?defLabelA:defLabelB,style:{padding:"4px 6px",fontSize:12}}),
-      h("input",{type:"number",value:row.value||"",onChange:e=>update(i,"value",e.target.value),placeholder:row.mode==="distance"?"1.5":"6",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+      row.mode===distMode
+        ? h("input",{type:"number",value:row.value||"",onChange:e=>update(i,"value",e.target.value),placeholder:distMode==="meters"?"1000":"1.5",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}})
+        : h("input",{type:"text",inputMode:"decimal",value:row.value||"",onChange:e=>update(i,"value",e.target.value.replace(/[^0-9:.]/g,"")),placeholder:"6 or 1:30",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)"}},
-        h("button",{onClick:()=>update(i,"mode","time"),style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:row.mode!=="distance"?"var(--accent)":"var(--surface)",color:row.mode!=="distance"?"var(--accent-text)":"var(--text-muted)"}},"min"),
-        h("button",{onClick:()=>update(i,"mode","distance"),style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:row.mode==="distance"?"var(--accent)":"var(--surface)",color:row.mode==="distance"?"var(--accent-text)":"var(--text-muted)"}},"km")
+        h("button",{onClick:()=>update(i,"mode","time"),style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:row.mode!==distMode?"var(--accent)":"var(--surface)",color:row.mode!==distMode?"var(--accent-text)":"var(--text-muted)"}},"min"),
+        h("button",{onClick:()=>update(i,"mode",distMode),style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:row.mode===distMode?"var(--accent)":"var(--surface)",color:row.mode===distMode?"var(--accent-text)":"var(--text-muted)"}},distUnit)
       ),
       h("input",{type:"number",value:row.reps||"",onChange:e=>update(i,"reps",e.target.value),placeholder:"1",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       rows.length>1?h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:14,lineHeight:1,padding:0}},"×"):h("div")
@@ -542,7 +562,7 @@ const WktRows = ({part, onChange}) => {
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
       h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
       (totalMin>0||totalKm>0)&&h("span",{style:{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}},
-        expanded.length+" steps"+(totalMin>0?" · "+totalMin+" min":"")+(totalKm>0?" · "+totalKm.toFixed(1)+" km":"")
+        expanded.length+" steps"+(totalMin>0?" · "+fmtMin(totalMin)+" min":"")+(totalKm>0?" · "+totalKm.toFixed(1)+" km":"")
       )
     )
   );
@@ -917,7 +937,7 @@ const partToFitStep = part => {
     const dist=parseFloat(part.distance)||0;
     return [dist>0?{label,durationType:"distance",meters:dist*1000}:{label,durationType:"open"}];
   }
-  if(part.mode==="time"&&parseFloat(part.duration)>0) return [{label,durationType:"time",minutes:parseFloat(part.duration)}];
+  if(part.mode==="time"&&parseMin(part.duration)>0) return [{label,durationType:"time",minutes:parseMin(part.duration)}];
   if(part.mode!=="time"&&parseFloat(part.distance)>0) return [{label,durationType:"distance",meters:parseFloat(part.distance)*1000}];
   return [{label,durationType:"open"}];
 };
@@ -944,7 +964,7 @@ const ActualDistanceField = ({f,s,planPart,label="Actual distance (km)"}) => {
   if (!isTime) return h("div",null,h("label",{className:"lbl"},label),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"}));
   return h("div",null,
     h("label",{className:"lbl"},"Actual duration (min)"),
-    h("input",{type:"number",value:f.actualDuration||"",onChange:e=>s("actualDuration",e.target.value),placeholder:planPart.duration||"e.g. 45",className:"mono"}),
+    h("input",{type:"text",inputMode:"decimal",value:f.actualDuration||"",onChange:e=>s("actualDuration",e.target.value.replace(/[^0-9:.]/g,"")),placeholder:planPart.duration||"e.g. 45 or 1:30",className:"mono"}),
     (f._showKm||f.actualDistance)
       ? h("div",{style:{display:"flex",alignItems:"center",gap:4,marginTop:6}},
           h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono",style:{width:70,fontSize:12,padding:"4px 6px"}}),
@@ -1121,7 +1141,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
   }
 
   if (type==="strength") return h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}},
-    h("div",null,h("label",{className:"lbl"},"Duration (minutes)"),h("input",{type:"number",value:f.duration||"",onChange:e=>s("duration",e.target.value),placeholder:"e.g. 45"})),
+    h("div",null,h("label",{className:"lbl"},"Duration (minutes)"),h("input",{type:"text",inputMode:"decimal",value:f.duration||"",onChange:e=>s("duration",e.target.value.replace(/[^0-9:.]/g,"")),placeholder:"e.g. 45 or 1:30"})),
     h("div",null,h("label",{className:"lbl"},"Actual distance (km) — optional"),h("input",{type:"number",value:f.actualDistance||"",onChange:e=>s("actualDistance",e.target.value),placeholder:"0",className:"mono"}))
   );
 
