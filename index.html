@@ -387,7 +387,7 @@ const wktRowsSummary = part => {
   const groups = wktGroups(getWktRows(part), pattern);
   const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
   const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
-  const label = r=>parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+" "+((r.label||"").trim()||"Stage");
+  const label = r=>parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+((r.label||"").trim()?" "+r.label.trim():"");
   const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?totalKm.toFixed(1)+" km":null].filter(Boolean).join(" + ");
   return groups.map(g=>g.map(label).join(" / ")).join(" → ")+(totals?" · "+totals+" total":"");
 };
