@@ -316,33 +316,36 @@ const getHillRows = part => {
   if(typeof hr==="object") return Object.values(hr);
   return [];
 };
+// restVal is minutes, typed as "1.5" or "1:30" (m:ss) — same convention as the stage rows below.
+// restUnit "sec" is a legacy value from a short-lived earlier version (raw seconds); convert it
+// rather than reparse it as minutes.
+const hillRestMin = r => r.restUnit==="m" ? 0 : r.restUnit==="sec" ? (parseFloat(r.restVal)||0)/60 : parseMin(r.restVal);
 const hillRowsSummary = part => {
   const rows = getHillRows(part).filter(r=>parseFloat(r.reps)>0);
   if(!rows.length) return null;
   return rows.map(r=>{
     const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-    const restVal=parseFloat(r.restVal)||0;
-    const rest = restVal>0 ? " +"+restVal+(r.restUnit==="m"?"m":"s")+" rest" : "";
+    const restMin=hillRestMin(r), restM=r.restUnit==="m"?parseFloat(r.restVal)||0:0;
+    const rest = restMin>0 ? " +"+fmtMin(restMin)+"min rest" : restM>0 ? " +"+restM+"m rest" : "";
     return (sets>1?sets+"×":"")+reps+"×"+dist+"m"+rest;
   }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km";
 };
 // Expands hill rows into individual workout_step-shaped entries for the Garmin export: each
 // rep is its own distance step, with an optional rest step (time or distance) between reps —
 // but not trailing after the very last rep of the whole part. Row shape: {sets, reps, distM,
-// restVal, restUnit:"sec"|"m"}.
+// restVal, restUnit:"min"|"m"}.
 const expandHillRows = rows => {
   const valid = rows.filter(r=>parseFloat(r.reps)>0 && parseFloat(r.distM)>0);
   const steps=[];
   valid.forEach((r,ri)=>{
     const count = Math.round((parseFloat(r.sets)||1)*(parseFloat(r.reps)||0));
-    const restVal = parseFloat(r.restVal)||0;
+    const restMin = hillRestMin(r), restM = r.restUnit==="m" ? parseFloat(r.restVal)||0 : 0;
     for(let i=0;i<count;i++){
       steps.push({label:"", durationType:"distance", meters:parseFloat(r.distM)||0});
       const isLast = ri===valid.length-1 && i===count-1;
-      if(restVal>0 && !isLast){
-        steps.push(r.restUnit==="m"
-          ? {label:"", durationType:"distance", meters:restVal}
-          : {label:"", durationType:"time", minutes:restVal/60});
+      if(!isLast){
+        if(restM>0) steps.push({label:"", durationType:"distance", meters:restM});
+        else if(restMin>0) steps.push({label:"", durationType:"time", minutes:restMin});
       }
     }
   });
@@ -489,11 +492,11 @@ const hillRowKm = r => {
   return sets*reps*(dist+restM)/1000;
 };
 const HillPlanRows = ({part, onChange}) => {
-  const rows = getHillRows(part).length > 0 ? getHillRows(part) : [{sets:"",reps:"",distM:"",restVal:"",restUnit:"sec"}];
+  const rows = getHillRows(part).length > 0 ? getHillRows(part) : [{sets:"",reps:"",distM:"",restVal:"",restUnit:"min"}];
   const cols = "56px 56px 60px 90px 1fr 20px";
   const withTotal = nr => ({...part, hillRows:nr, distance:nr.reduce((t,r)=>t+hillRowKm(r),0).toFixed(3)});
   const update = (i,k,v) => { const nr=[...rows]; nr[i]={...nr[i],[k]:v}; onChange(withTotal(nr)); };
-  const addRow = () => onChange(withTotal([...rows,{sets:"",reps:"",distM:"",restVal:"",restUnit:"sec"}]));
+  const addRow = () => onChange(withTotal([...rows,{sets:"",reps:"",distM:"",restVal:"",restUnit:"min"}]));
   const removeRow = i => onChange(withTotal(rows.filter((_,idx)=>idx!==i)));
   const totalKm = rows.reduce((t,r)=>t+hillRowKm(r),0);
   return h("div",{style:{marginTop:6}},
@@ -512,9 +515,11 @@ const HillPlanRows = ({part, onChange}) => {
         h("input",{type:"number",value:row.reps,onChange:e=>update(i,"reps",e.target.value),placeholder:"4",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
         h("input",{type:"number",value:row.distM,onChange:e=>update(i,"distM",e.target.value),placeholder:"120",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
         h("div",{style:{display:"flex",gap:3,alignItems:"center"}},
-          h("input",{type:"number",value:row.restVal||"",onChange:e=>update(i,"restVal",e.target.value),placeholder:"60",style:{width:0,flex:1,minWidth:34,padding:"4px 5px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+          row.restUnit==="m"
+            ? h("input",{type:"number",value:row.restVal||"",onChange:e=>update(i,"restVal",e.target.value),placeholder:"30",style:{width:0,flex:1,minWidth:34,padding:"4px 5px",fontSize:12,fontFamily:"'DM Mono',monospace"}})
+            : h("input",{type:"text",inputMode:"decimal",value:row.restVal||"",onChange:e=>update(i,"restVal",e.target.value.replace(/[^0-9:.]/g,"")),placeholder:"1:00",style:{width:0,flex:1,minWidth:34,padding:"4px 5px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
           h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)",flexShrink:0}},
-            h("button",{onClick:()=>update(i,"restUnit","sec"),title:"Rest in seconds",style:{padding:"3px 5px",fontSize:10,fontWeight:600,border:"none",cursor:"pointer",background:row.restUnit!=="m"?"var(--accent)":"var(--surface)",color:row.restUnit!=="m"?"var(--accent-text)":"var(--text-muted)"}},"s"),
+            h("button",{onClick:()=>update(i,"restUnit","min"),title:"Rest in minutes (m:ss)",style:{padding:"3px 5px",fontSize:10,fontWeight:600,border:"none",cursor:"pointer",background:row.restUnit!=="m"?"var(--accent)":"var(--surface)",color:row.restUnit!=="m"?"var(--accent-text)":"var(--text-muted)"}},"min"),
             h("button",{onClick:()=>update(i,"restUnit","m"),title:"Rest in meters (jog back)",style:{padding:"3px 5px",fontSize:10,fontWeight:600,border:"none",cursor:"pointer",background:row.restUnit==="m"?"var(--accent)":"var(--surface)",color:row.restUnit==="m"?"var(--accent-text)":"var(--text-muted)"}},"m")
           )
         ),
