@@ -321,8 +321,32 @@ const hillRowsSummary = part => {
   if(!rows.length) return null;
   return rows.map(r=>{
     const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-    return (sets>1?sets+"×":"")+reps+"×"+dist+"m";
+    const restVal=parseFloat(r.restVal)||0;
+    const rest = restVal>0 ? " +"+restVal+(r.restUnit==="m"?"m":"s")+" rest" : "";
+    return (sets>1?sets+"×":"")+reps+"×"+dist+"m"+rest;
   }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km";
+};
+// Expands hill rows into individual workout_step-shaped entries for the Garmin export: each
+// rep is its own distance step, with an optional rest step (time or distance) between reps —
+// but not trailing after the very last rep of the whole part. Row shape: {sets, reps, distM,
+// restVal, restUnit:"sec"|"m"}.
+const expandHillRows = rows => {
+  const valid = rows.filter(r=>parseFloat(r.reps)>0 && parseFloat(r.distM)>0);
+  const steps=[];
+  valid.forEach((r,ri)=>{
+    const count = Math.round((parseFloat(r.sets)||1)*(parseFloat(r.reps)||0));
+    const restVal = parseFloat(r.restVal)||0;
+    for(let i=0;i<count;i++){
+      steps.push({label:"", durationType:"distance", meters:parseFloat(r.distM)||0});
+      const isLast = ri===valid.length-1 && i===count-1;
+      if(restVal>0 && !isLast){
+        steps.push(r.restUnit==="m"
+          ? {label:"", durationType:"distance", meters:restVal}
+          : {label:"", durationType:"time", minutes:restVal/60});
+      }
+    }
+  });
+  return steps;
 };
 
 // Structured interval rows for fartlek/interval parts (e.g. "3×6min In" + "2×4min Out"),
@@ -457,48 +481,48 @@ const WeekStrip = ({plan={},reports={},compact=false}) =>
   );
 
 // ── Part Editor ───────────────────────────────────────────────────────────────
+// A row's own contribution to total km: the reps' distance, plus rest distance when the
+// rest is measured in meters (a timed rest doesn't add ground covered).
+const hillRowKm = r => {
+  const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
+  const restM = r.restUnit==="m" ? parseFloat(r.restVal)||0 : 0;
+  return sets*reps*(dist+restM)/1000;
+};
 const HillPlanRows = ({part, onChange}) => {
-  const rows = getHillRows(part).length > 0 ? getHillRows(part) : [{sets:"",reps:"",distM:""}];
-  const update = (i,k,v) => {
-    const nr=[...rows]; nr[i]={...nr[i],[k]:v};
-    const totalKm=nr.reduce((t,r)=>{
-      const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-      return t+(sets*reps*dist/1000);
-    },0);
-    onChange({...part, hillRows:nr, distance:totalKm.toFixed(3)});
-  };
-  const addRow = () => onChange({...part, hillRows:[...rows,{sets:"",reps:"",distM:""}]});
-  const removeRow = i => {
-    const nr=rows.filter((_,idx)=>idx!==i);
-    const totalKm=nr.reduce((t,r)=>{
-      const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-      return t+(sets*reps*dist/1000);
-    },0);
-    onChange({...part, hillRows:nr, distance:totalKm.toFixed(3)});
-  };
-  const totalKm=rows.reduce((t,r)=>{
-    const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-    return t+(sets*reps*dist/1000);
-  },0);
+  const rows = getHillRows(part).length > 0 ? getHillRows(part) : [{sets:"",reps:"",distM:"",restVal:"",restUnit:"sec"}];
+  const cols = "56px 56px 60px 90px 1fr 20px";
+  const withTotal = nr => ({...part, hillRows:nr, distance:nr.reduce((t,r)=>t+hillRowKm(r),0).toFixed(3)});
+  const update = (i,k,v) => { const nr=[...rows]; nr[i]={...nr[i],[k]:v}; onChange(withTotal(nr)); };
+  const addRow = () => onChange(withTotal([...rows,{sets:"",reps:"",distM:"",restVal:"",restUnit:"sec"}]));
+  const removeRow = i => onChange(withTotal(rows.filter((_,idx)=>idx!==i)));
+  const totalKm = rows.reduce((t,r)=>t+hillRowKm(r),0);
   return h("div",{style:{marginTop:6}},
-    h("div",{style:{display:"grid",gridTemplateColumns:"70px 70px 70px 1fr 20px",gap:5,marginBottom:4,alignItems:"center"}},
+    h("div",{style:{display:"grid",gridTemplateColumns:cols,gap:5,marginBottom:4,alignItems:"center"}},
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Sets"),
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Reps"),
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Dist (m)"),
+      h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Rest"),
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"= km"),
       h("div")
     ),
     rows.map((row,i)=>{
-      const sets=parseFloat(row.sets)||1, reps=parseFloat(row.reps)||0, dist=parseFloat(row.distM)||0;
-      const rowKm=(sets*reps*dist/1000);
-      return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"70px 70px 70px 1fr 20px",gap:5,marginBottom:5,alignItems:"center"}},
+      const rowKm=hillRowKm(row);
+      return h("div",{key:i,style:{display:"grid",gridTemplateColumns:cols,gap:5,marginBottom:5,alignItems:"center"}},
         h("input",{type:"number",value:row.sets,onChange:e=>update(i,"sets",e.target.value),placeholder:"2",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
         h("input",{type:"number",value:row.reps,onChange:e=>update(i,"reps",e.target.value),placeholder:"4",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
         h("input",{type:"number",value:row.distM,onChange:e=>update(i,"distM",e.target.value),placeholder:"120",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+        h("div",{style:{display:"flex",gap:3,alignItems:"center"}},
+          h("input",{type:"number",value:row.restVal||"",onChange:e=>update(i,"restVal",e.target.value),placeholder:"60",style:{width:0,flex:1,minWidth:34,padding:"4px 5px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+          h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)",flexShrink:0}},
+            h("button",{onClick:()=>update(i,"restUnit","sec"),title:"Rest in seconds",style:{padding:"3px 5px",fontSize:10,fontWeight:600,border:"none",cursor:"pointer",background:row.restUnit!=="m"?"var(--accent)":"var(--surface)",color:row.restUnit!=="m"?"var(--accent-text)":"var(--text-muted)"}},"s"),
+            h("button",{onClick:()=>update(i,"restUnit","m"),title:"Rest in meters (jog back)",style:{padding:"3px 5px",fontSize:10,fontWeight:600,border:"none",cursor:"pointer",background:row.restUnit==="m"?"var(--accent)":"var(--surface)",color:row.restUnit==="m"?"var(--accent-text)":"var(--text-muted)"}},"m")
+          )
+        ),
         h("div",{style:{fontSize:11,color:"var(--text)",fontFamily:"monospace",paddingLeft:4}}, rowKm>0?rowKm.toFixed(3)+" km":"—"),
         rows.length>1?h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:14,lineHeight:1,padding:0}},"×"):h("div")
       );
     }),
+    h("div",{style:{fontSize:10,color:"var(--text-muted)",margin:"2px 0 6px"}},"Rest is the recovery between reps (e.g. jog back down) — leave blank for none. It's inserted between reps in the Garmin export too."),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
       h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
       totalKm>0&&h("span",{style:{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}},"Total: "+totalKm.toFixed(3)+" km")
@@ -946,16 +970,19 @@ const encodeFitWorkout = (name, steps) => {
   fileBytes.push(fileCrc&0xFF,(fileCrc>>8)&0xFF);
   return new Uint8Array(fileBytes);
 };
-// Builds one workout_step per plan part — expanding rep-group rows (any type except hills,
-// which has its own distance-rep structure) into their alternating or sequential steps, and
-// a single time/distance/open step for anything without rows. Warm-up and cool-down km are
-// deliberately left out of the export: they're run before/after the watch workout, not part of it.
+// Builds one workout_step per plan part — expanding rep-group rows (hill rows into individual
+// rep + rest steps, other types' rows into their alternating/sequential/grouped steps) into
+// real steps, and a single time/distance/open step for anything without rows. Warm-up and
+// cool-down km are deliberately left out of the export: they're run before/after the watch
+// workout, not part of it.
 const partToFitStep = part => {
   const wt=WT[part.type]||WT.easy;
   const wktRows=wktValidRows(getWktRows(part));
   if(part.type!=="hills"&&wktRows.length>0) return expandWktRows(wktRows, wktPatternOf(part));
   const label=(part.notes||wt.label).slice(0,15);
   if(part.type==="hills"){
+    const hillSteps=expandHillRows(getHillRows(part));
+    if(hillSteps.length) return hillSteps;
     const dist=parseFloat(part.distance)||0;
     return [dist>0?{label,durationType:"distance",meters:dist*1000}:{label,durationType:"open"}];
   }
