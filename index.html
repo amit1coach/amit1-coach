@@ -349,11 +349,14 @@ const fmtMin = m => { const t=Math.round(m*60), mm=Math.floor(t/60), ss=t%60; re
 // Row units: "time" (min), "distance" (km), "meters" (m — used by Intervals parts).
 const wktRowValue = r => r.mode==="time" ? parseMin(r.value) : (parseFloat(r.value)||0);
 const wktValidRows = rows => rows.filter(r=>wktRowValue(r)>0 && (parseInt(r.reps)||0)>0);
+// A row labeled "Rec" is a recovery: its label is never printed (plan summary or Garmin step name).
+const wktIsRec = r => (r.label||"").trim().toLowerCase()==="rec";
+const wktRowLabel = r => wktIsRec(r) ? "" : (r.label||"").trim();
 const wktRowToStep = r => r.mode==="distance"
-  ? {label:(r.label||"").trim(), durationType:"distance", meters:(parseFloat(r.value)||0)*1000}
+  ? {label:wktRowLabel(r), durationType:"distance", meters:(parseFloat(r.value)||0)*1000}
   : r.mode==="meters"
-    ? {label:(r.label||"").trim(), durationType:"distance", meters:parseFloat(r.value)||0}
-    : {label:(r.label||"").trim(), durationType:"time", minutes:parseMin(r.value)};
+    ? {label:wktRowLabel(r), durationType:"distance", meters:parseFloat(r.value)||0}
+    : {label:wktRowLabel(r), durationType:"time", minutes:parseMin(r.value)};
 // "grouped" is the in-between: a row with mix:true joins the row above it into one alternating
 // group, and groups play one after another (e.g. 16k Base, 2k Fast, then 3×[1k Steady / 1k Fast]).
 const wktPatternOf = part => part.wktPattern==="sequential"||part.wktPattern==="grouped" ? part.wktPattern : "alternate";
@@ -387,9 +390,12 @@ const wktRowsSummary = part => {
   const groups = wktGroups(getWktRows(part), pattern);
   const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
   const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
-  const label = r=>parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+((r.label||"").trim()?" "+r.label.trim():"");
+  // A Rec row also attaches to the preceding step with " / " instead of " → ".
+  const isRec = wktIsRec;
+  const label = r=>parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+(wktRowLabel(r)?" "+wktRowLabel(r):"");
   const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?totalKm.toFixed(1)+" km":null].filter(Boolean).join(" + ");
-  return groups.map(g=>g.map(label).join(" / ")).join(" → ")+(totals?" · "+totals+" total":"");
+  const body = groups.map((g,i)=>(i===0?"":isRec(g[0])?" / ":" → ")+g.map(label).join(" / ")).join("");
+  return body+(totals?" · "+totals+" total":"");
 };
 
 
