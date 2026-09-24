@@ -1832,6 +1832,7 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false)
   // Google Docs import ignores CSS custom properties, so resolve them to the light-theme values declared above
   const vars = {};
   html.replace(/--([a-z0-9-]+)\s*:\s*([^;}]+)/gi,(m,k,v)=>{vars[k]=v.trim();return m;});
+  vars.bg = "#fff"; // otherwise Docs tints the whole page grey
   return html.replace(/var\(--([a-z0-9-]+)\)/gi,(m,k)=>vars[k]||"inherit");
 };
 
