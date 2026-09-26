@@ -1596,8 +1596,9 @@ const MonthlyWeight = ({current,previous,isCoach,onSave}) => {
 };
 
 // Planned vs actual pace for one part. Only when the plan has a target pace; a target can be a
-// single pace ("5:30", ±5 s/km counts as on target) or a range ("5:20-5:40").
-const PACE_TOLERANCE_SEC = 5;
+// single pace ("5:30") or a range ("5:20-5:40"). Within ±10 s/km of it counts as on target; outside
+// that, the difference is measured from the target itself (5:30 planned, 5:41 run = 11 s/km slower).
+const PACE_TOLERANCE_SEC = 10;
 const paceCheck = (part, td, dist) => {
   if (!part?.pace || part.type==="hills") return null;
   const bounds = String(part.pace).split(/s*[-–]s*/).map(parseMmss).filter(v=>v>0);
@@ -1609,9 +1610,9 @@ const paceCheck = (part, td, dist) => {
     part.type==="race"&&td.finishTime&&dist>0 ? formatPaceFromSecPerKm(parseMmss(td.finishTime)/dist) : null;
   const actual = parseMmss(actualStr);
   if (!actual) return null;
-  const lo = Math.min(...bounds) - (bounds.length===1?PACE_TOLERANCE_SEC:0);
-  const hi = Math.max(...bounds) + (bounds.length===1?PACE_TOLERANCE_SEC:0);
-  const diff = actual<lo ? actual-lo : actual>hi ? actual-hi : 0; // negative = faster than planned
+  const lo = Math.min(...bounds), hi = Math.max(...bounds);
+  const off = actual<lo ? actual-lo : actual>hi ? actual-hi : 0; // negative = faster than planned
+  const diff = Math.abs(off)<=PACE_TOLERANCE_SEC ? 0 : off;
   return {target:part.pace, actual:actualStr, diff:Math.round(diff),
     text: diff===0 ? "on target" : `${Math.abs(Math.round(diff))}s/km ${diff<0?"faster":"slower"}`};
 };
