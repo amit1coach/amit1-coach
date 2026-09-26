@@ -1328,7 +1328,7 @@ const LapAnalyzer = ({onClose, groups, onGroupsChange}) => {
   );
 };
 
-const SessRepForm = ({session, existing, onChange}) => {
+const SessRepForm = ({session, existing, onChange, showMissing}) => {
   const parts = session.parts||[{type:"easy",distance:"",pace:""}];
   const wt = WT[sessFirstType(session)]||WT.easy;
   const km = sessTotalKm(session);
@@ -1336,7 +1336,7 @@ const SessRepForm = ({session, existing, onChange}) => {
 
   const initPartReps = parts.map((p,i) => existing?.partReps?.[i]||{typeData:{actualDistance:p.distance||""}});
   const [partReps, setPartReps] = useState(initPartReps);
-  const [f, setF] = useState(()=>({status:"done", effort:"6", hr:"", notes:"", wu:"", cd:"", garminGroups:[], ...(existing||{})}));
+  const [f, setF] = useState(()=>({status:"", effort:"", hr:"", notes:"", wu:"", cd:"", garminGroups:[], ...(existing||{})}));
   const [importNonce, setImportNonce] = useState(0);
   const [importMsg, setImportMsg] = useState(null);
   const [showAnalyzer, setShowAnalyzer] = useState(false);
@@ -1409,7 +1409,7 @@ const SessRepForm = ({session, existing, onChange}) => {
       h("input",{type:"number",value:f.wu||"",onChange:e=>s("wu",e.target.value),placeholder:"e.g. 3",className:"mono",step:"0.1",style:{maxWidth:120}})
     ),
     h("div",{style:{display:"flex", gap:6, marginBottom:10}},
-      Object.entries(SS).map(([st,ss])=>h("button",{key:st, onClick:()=>s("status",st), style:{flex:1,padding:"7px 0",borderRadius:6,cursor:"pointer",fontWeight:600,fontSize:12,border:f.status===st?`2px solid ${ss.border}`:"0.5px solid var(--border)",background:f.status===st?ss.bg:"var(--surface)",color:f.status===st?ss.color:"var(--text-muted)"}},ss.label))
+      Object.entries(SS).map(([st,ss])=>h("button",{key:st, onClick:()=>s("status",st), style:{flex:1,padding:"7px 0",borderRadius:6,cursor:"pointer",fontWeight:600,fontSize:12,border:f.status===st?`2px solid ${ss.border}`:`0.5px solid ${showMissing&&!f.status?"var(--danger)":"var(--border)"}`,background:f.status===st?ss.bg:"var(--surface)",color:f.status===st?ss.color:"var(--text-muted)"}},ss.label))
     ),
     f.status!=="skipped"&&h("div",null,
       multiPart
@@ -1421,12 +1421,10 @@ const SessRepForm = ({session, existing, onChange}) => {
             )
           )
         : h(TypedRepFields,{key:"tf0-"+importNonce, type:parts[0]?.type||"easy", existing:partReps[0]?.typeData, planPart:parts[0], onChange:td=>updatePart(0,{typeData:td,actualDistance:td.actualDistance||""})}),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8,marginTop:8}},
+      h("div",{className:"gr2",style:{display:"grid",gridTemplateColumns:"minmax(110px,1fr) minmax(240px,2fr)",gap:10,marginBottom:8,marginTop:8}},
         h("div",null,h("label",{className:"lbl"},"Avg HR (bpm)"),h("input",{type:"number",value:f.hr,onChange:e=>s("hr",e.target.value),placeholder:"e.g. 148 — optional",className:"vague"})),
         h("div",null,
-          h("label",{className:"lbl"},"Effort: ",h("strong",{style:{color:wt.dark}},f.effort+"/10")),
-          h("input",{type:"range",min:"1",max:"10",step:"1",value:f.effort,onChange:e=>s("effort",e.target.value),style:{width:"100%",marginTop:6,accentColor:wt.color}}),
-          h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-muted)"}},h("span","Easy"),h("span","Max"))
+          h(TapScale,{label:"Effort",value:f.effort,onChange:v=>s("effort",v),max:10,colors:[wt.color],leftLabel:"Easy",rightLabel:"Max",missing:showMissing&&!f.effort})
         )
       ),
       h("div",{style:{marginBottom:10}},h("label",{className:"lbl"},"Notes"),h("textarea",{value:f.notes,onChange:e=>s("notes",e.target.value),rows:2,placeholder:"How did it feel?"})),
@@ -1439,21 +1437,52 @@ const SessRepForm = ({session, existing, onChange}) => {
   );
 };
 
-const SliderScale = ({label,value,onChange,leftLabel,rightLabel,reverse=false,emojis=null}) => {
-  const colors=reverse
-    ? ["var(--success)","#84CC16","var(--accent)","#F97316","var(--danger)"]  // 1=green, 5=red (stress)
-    : ["var(--danger)","#F97316","var(--accent)","#84CC16","var(--success)"]; // 1=red, 5=green (sleep)
-  const c = colors[parseInt(value)-1]||"var(--text-muted)";
-  const v = parseInt(value);
-  const icon = emojis ? (v<=2?emojis[0]:v===3?emojis[1]:emojis[2]) : null;
-  return h("div",{style:{flex:1}},
+const SCALE5_UP   = ["var(--danger)","#F97316","var(--accent)","#84CC16","var(--success)"]; // 1=red, 5=green (sleep)
+const SCALE5_DOWN = [...SCALE5_UP].reverse();                                           // 1=green, 5=red (stress)
+
+// Tap-to-choose scale. Starts empty ("" = not answered) so an untouched answer is never saved as a real value.
+const TapScale = ({label,value,onChange,max=5,colors,leftLabel,rightLabel,missing}) => {
+  const v = parseInt(value)||0;
+  const colorOf = n => colors ? colors[Math.round((n-1)*(colors.length-1)/(max-1))] : "var(--accent)";
+  return h("div",{style:{flex:1,minWidth:0}},
     h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}},
-      h("label",{className:"lbl",style:{margin:0,fontSize:11}},icon?icon+" "+label:label),
-      h("span",{style:{fontSize:14,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}},value+"/5")
+      h("label",{className:"lbl",style:{margin:0,fontSize:11,color:missing?"var(--danger-text)":undefined}},label),
+      h("span",{style:{fontSize:14,fontWeight:700,color:v?colorOf(v):"var(--text-muted)",fontFamily:"'DM Mono',monospace"}},(v||"–")+"/"+max)
     ),
-    h("input",{type:"range",min:"1",max:"5",step:"1",value:value,onChange:e=>onChange(e.target.value),style:{width:"100%",accentColor:c}}),
-    h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:9,color:"var(--text-muted)",marginTop:1}},
-      h("span",leftLabel),h("span",rightLabel)
+    h("div",{style:{display:"flex",gap:3}},
+      Array.from({length:max},(_,i)=>i+1).map(n=>h("button",{key:n,type:"button",onClick:()=>onChange(String(n)),
+        style:{flex:1,minWidth:0,padding:"7px 0",borderRadius:5,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'DM Mono',monospace",
+          border:v===n?`2px solid ${colorOf(n)}`:`0.5px solid ${missing?"var(--danger)":"var(--border-strong)"}`,
+          background:v===n?colorOf(n):"var(--surface)",color:v===n?"#fff":"var(--text-muted2)"}},n))
+    ),
+    h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:9,color:"var(--text-muted)",marginTop:2}},
+      h("span",null,leftLabel),h("span",null,rightLabel)
+    )
+  );
+};
+
+const WellbeingFields = ({sleep,setSleep,stress,setStress,showMissing}) =>
+  h("div",{style:{background:"var(--surface-alt)",borderRadius:8,padding:"14px 16px",marginBottom:12,border:"0.5px solid var(--border)"}},
+    h("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-muted2)",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}},"How are you feeling today?"),
+    h("div",{style:{display:"flex",gap:16,flexWrap:"wrap"}},
+      h(TapScale,{label:"😴 Sleep quality",value:sleep,onChange:setSleep,colors:SCALE5_UP,leftLabel:"Poor",rightLabel:"Excellent",missing:showMissing&&!sleep}),
+      h(TapScale,{label:(stress?stressEmoji(stress):"🧠")+" Stress level",value:stress,onChange:setStress,colors:SCALE5_DOWN,leftLabel:"Relaxed",rightLabel:"Stressed",missing:showMissing&&!stress})
+    )
+  );
+
+// Rest days have no sessions, so this only records how the athlete slept/feels
+const RestDayForm = ({day,existingReport,onSave,onCancel}) => {
+  const [sleep,setSleep]=useState(existingReport?.sleep||"");
+  const [stress,setStress]=useState(existingReport?.stress||"");
+  const [tried,setTried]=useState(false);
+  const ok = sleep&&stress;
+  return h("div",null,
+    h("div",{style:{marginBottom:14,fontSize:13,color:"var(--text-muted)"}},day+" is a rest day — just log how you slept and how stressed you feel."),
+    h(WellbeingFields,{sleep,setSleep,stress,setStress,showMissing:tried}),
+    tried&&!ok&&h("div",{style:{fontSize:12,color:"var(--danger-text)",textAlign:"right",marginBottom:6}},"Please choose both sleep and stress."),
+    h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}},
+      h("button",{className:"btn",onClick:onCancel},"Cancel"),
+      h("button",{className:"btnp",onClick:()=>{ if(!ok){setTried(true);return;} onSave({...(existingReport||{}),sleep,stress}); }},"Save")
     )
   );
 };
@@ -1462,15 +1491,16 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
   const init=existingReport?.sessions||[];
   // Old reports stored wu/cd once per day; migrate that onto the first session's report.
   const [reps,setReps]=useState(daySessions.map((sess,i)=>{
-    const base=init[i]?{...init[i]}:{status:"done",effort:"6",hr:"",notes:"",wu:"",cd:""};
+    const base=init[i]?{...init[i]}:{status:"",effort:"",hr:"",notes:"",wu:"",cd:""};
     if(i===0){
       if(!base.wu&&existingReport?.wu) base.wu=existingReport.wu;
       if(!base.cd&&existingReport?.cd) base.cd=existingReport.cd;
     }
     return base;
   }));
-  const [sleep,setSleep]=useState(existingReport?.sleep||"3");
-  const [stress,setStress]=useState(existingReport?.stress||"3");
+  const [sleep,setSleep]=useState(existingReport?.sleep||"");
+  const [stress,setStress]=useState(existingReport?.stress||"");
+  const [tried,setTried]=useState(false);
   const upd=(i,v)=>setReps(r=>{const n=[...r];n[i]=v;return n;});
 
   const wuKm = reps.reduce((s,r)=>s+(parseFloat(r.wu)||0),0);
@@ -1478,18 +1508,20 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
   const cdKm = reps.reduce((s,r)=>s+(parseFloat(r.cd)||0),0);
   const totalKm = wuKm + mainKm + cdKm;
 
+  const sessName = i => daySessions.length>1 ? "session "+(i+1) : "the session";
+  const missing = [
+    !sleep&&"sleep", !stress&&"stress",
+    ...reps.flatMap((r,i)=>[
+      !r.status&&"how "+sessName(i)+" went (done / modified / skipped)",
+      r.status&&r.status!=="skipped"&&!r.effort&&"effort for "+sessName(i),
+    ]),
+  ].filter(Boolean);
+
   return h("div",null,
     h("div",{style:{marginBottom:14,fontSize:13,color:"var(--text-muted)"}},daySessions.length+" session"+(daySessions.length>1?"s":"")+" planned for "+day),
-    // Wellbeing
-    h("div",{style:{background:"var(--surface-alt)",borderRadius:8,padding:"14px 16px",marginBottom:12,border:"0.5px solid var(--border)"}},
-      h("div",{style:{fontSize:12,fontWeight:700,color:"var(--text-muted2)",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}},"How are you feeling today?"),
-      h("div",{style:{display:"flex",gap:16}},
-        h(SliderScale,{label:"😴 Sleep quality",value:sleep,onChange:setSleep,leftLabel:"Poor",rightLabel:"Excellent",reverse:false}),
-        h(SliderScale,{label:"Stress level",value:stress,onChange:setStress,leftLabel:"Relaxed",rightLabel:"Stressed",reverse:true,emojis:["🙂","😐","😣"]})
-      )
-    ),
+    h(WellbeingFields,{sleep,setSleep,stress,setStress,showMissing:tried}),
     // Sessions — each with its own warm up (top) & cool down (bottom)
-    daySessions.map((sess,i)=>h(SessRepForm,{key:i,session:sess,existing:reps[i],onChange:v=>upd(i,v)})),
+    daySessions.map((sess,i)=>h(SessRepForm,{key:i,session:sess,existing:reps[i],onChange:v=>upd(i,v),showMissing:tried})),
     // Total KMs summary
     h("div",{style:{background:"var(--surface-alt)",borderRadius:8,padding:"10px 14px",marginBottom:12,border:"0.5px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}},
       h("div",{style:{fontSize:13,color:"var(--text-muted2)"}},
@@ -1501,9 +1533,13 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
         "Total: ",h("span",{className:"mono",style:{color:"var(--accent)"}},totalKm.toFixed(1)," km")
       )
     ),
+    tried&&missing.length>0&&h("div",{style:{fontSize:12,color:"var(--danger-text)",textAlign:"right",marginBottom:6}},"Please choose: "+missing.join(", ")+"."),
     h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}},
       h("button",{className:"btn",onClick:onCancel},"Cancel"),
-      h("button",{className:"btnp",onClick:()=>onSave({sessions:reps,sleep,stress,totalKm:totalKm.toFixed(1)})},"Submit report")
+      h("button",{className:"btnp",onClick:()=>{
+        if(missing.length){setTried(true);return;}
+        onSave({sessions:reps,sleep,stress,totalKm:totalKm.toFixed(1)});
+      }},"Submit report")
     )
   );
 };
@@ -1633,7 +1669,10 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
         ),
         h("div",{style:{flex:1}},
           isRest
-            ? h("span",{style:{fontSize:13,color:"var(--border-strong)",fontWeight:500}},"Rest / Off")
+            ? h("div",{style:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}},
+                h("span",{style:{fontSize:13,color:"var(--border-strong)",fontWeight:500}},"Rest / Off"),
+                (r?.sleep||r?.stress)&&h("span",{style:{fontSize:12,color:"var(--text-muted2)"}},"😴 "+(r.sleep||"–")+"/5 · "+(r.stress?stressEmoji(r.stress):"🧠")+" "+(r.stress||"–")+"/5")
+              )
             : h("div",null,
                 sessions.length>1&&h("div",{style:{fontSize:12,fontWeight:700,color:"var(--text)",marginBottom:10,padding:"6px 10px",background:"var(--surface-alt)",borderRadius:6,borderLeft:"3px solid var(--accent)"}},
                   "Daily total KMs: ",h("span",{className:"mono"},dailyKm.toFixed(1)+" km")
@@ -1678,7 +1717,8 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
         ),
         h("div",{style:{display:"flex",alignItems:"center",gap:6,flexShrink:0}},
           !isRest&&r?.sessions&&h("span",{className:"stb",style:{background:"var(--success-bg)",color:"var(--success-text)"}},"Reported"),
-          !isCoach&&!isRest&&h("button",{className:"btn btns",onClick:()=>setRepDay(day)},r?"Edit":"Report")
+          !isCoach&&!isRest&&h("button",{className:"btn btns",onClick:()=>setRepDay(day)},r?.sessions?"Edit":"Report"),
+          !isCoach&&isRest&&h("button",{className:"btn btns",style:{fontSize:11},onClick:()=>setRepDay(day)},r?.sleep?"Edit":"😴 Log sleep & stress")
         )
       )
     );
@@ -1691,8 +1731,10 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
   return h(Fragment,null,
     DAYS.map(day=>renderSessions(day)),
     h(WeekCheckin,{data:reports.weekCheckin,isCoach,onSave:onSaveWeekCheckin}),
-    repDay&&h(Modal,{title:"Report — "+repDay,onClose:()=>setRepDay(null),wide:true},
-      h(ReportForm,{day:repDay,daySessions:plan[repDay]?.sessions||[],existingReport:reports[repDay],onCancel:()=>setRepDay(null),onSave:r=>{onReport(repDay,r);setRepDay(null);}})
+    repDay&&h(Modal,{title:(dayIsRest(plan[repDay])?"Rest day — ":"Report — ")+repDay,onClose:()=>setRepDay(null),wide:true},
+      dayIsRest(plan[repDay])
+        ? h(RestDayForm,{day:repDay,existingReport:reports[repDay],onCancel:()=>setRepDay(null),onSave:r=>{onReport(repDay,r);setRepDay(null);}})
+        : h(ReportForm,{day:repDay,daySessions:plan[repDay]?.sessions||[],existingReport:reports[repDay],onCancel:()=>setRepDay(null),onSave:r=>{onReport(repDay,r);setRepDay(null);}})
     )
   );
 };
@@ -1724,7 +1766,7 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false)
 
   const dayRows = DAYS.map(day=>{
     const d=plan[day]; const r=reports[day];
-    if(dayIsRest(d)) return `<tr><td><b>${day}</b></td><td colspan="7" style="color:var(--text-muted)">Rest / Off</td></tr>`;
+    if(dayIsRest(d)) return `<tr><td><b>${day}</b></td><td colspan="6" style="color:var(--text-muted)">Rest / Off</td><td>${r?.sleep||r?.stress?`😴${r.sleep?r.sleep+"/5":"–"} ${r.stress?stressEmoji(r.stress):"🧠"}${r.stress?r.stress+"/5":"–"}`:""}</td></tr>`;
     const sessions=(d?.sessions||[]);
     const plannedKm = dayTotalKm(d).toFixed(1);
     const actualKm = r?.sessions ? dayActualKm(r).toFixed(1) : "–";
