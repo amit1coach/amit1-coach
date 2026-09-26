@@ -1890,7 +1890,8 @@ const pickWeekDoc = (byId, wk) => {
   return null;
 };
 
-const loadProgressWeeks = async (athleteId, groupId, n=12) => {
+// Plan (own, else group) + reports for each of the last n weeks, oldest first
+const loadAthleteWeeks = async (athleteId, groupId, n) => {
   const toMap = snap => { const m={}; snap?.docs.forEach(d=>{m[d.id]=d.data();}); return m; };
   const [plans, reps, gps] = await Promise.all([
     _db.collection(`plans/${athleteId}/weeks`).get().then(toMap),
@@ -1901,16 +1902,87 @@ const loadProgressWeeks = async (athleteId, groupId, n=12) => {
   for (let off = -(n-1); off <= 0; off++) {
     const wk = weekKey(off);
     const own = pickWeekDoc(plans, wk);
-    const plan = own ? migratePlan(own) : (gps[wk] ? migratePlan(gps[wk]) : {});
-    const r = reps[wk] || {};
     weeks.push({
       wk, off,
       start: getWeekStart(off),
-      planned: DAYS.reduce((s,d)=>s+dayTotalKm(plan[d]),0),
-      done: DAYS.reduce((s,d)=>s+dayActualKm(r[d]),0),
+      plan: own ? migratePlan(own) : (gps[wk] ? migratePlan(gps[wk]) : {}),
+      reports: reps[wk] || {},
     });
   }
   return weeks;
+};
+
+const loadProgressWeeks = async (athleteId, groupId, n=12) =>
+  (await loadAthleteWeeks(athleteId, groupId, n)).map(w=>({
+    wk:w.wk, off:w.off, start:w.start,
+    planned: DAYS.reduce((s,d)=>s+dayTotalKm(w.plan[d]),0),
+    done: DAYS.reduce((s,d)=>s+dayActualKm(w.reports[d]),0),
+  }));
+
+// ── Needs-attention flags for the coach dashboard ────────────────────────────
+// weeks: loadAthleteWeeks output ending with the current week (needs ≥2 weeks; 6 gives the resting-HR baseline).
+// Returns this week's session compliance plus flags; "high" flags sort an athlete to the top.
+const athleteAttention = (weeks) => {
+  const byOff = Object.fromEntries(weeks.map(w=>[w.off,w]));
+  const cur = byOff[0];
+  const flags = [];
+
+  // This week: sessions done (done/modified) out of sessions planned
+  let planned=0, done=0;
+  DAYS.forEach(d=>{
+    const n=dayIsRest(cur.plan[d])?0:(cur.plan[d].sessions||[]).length;
+    planned+=n;
+    done+=(cur.reports[d]?.sessions||[]).slice(0,n).filter(s=>s?.status==="done"||s?.status==="modified").length;
+  });
+
+  // The last 7 days, most recent first (i=0 is today); may reach into last week
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days = [];
+  for (let i=0;i<7;i++){
+    const dt=new Date(today); dt.setDate(today.getDate()-i);
+    const off = dt < cur.start ? -1 : 0;
+    const w=byOff[off]; if(!w) continue;
+    const day=DAYS[dt.getDay()];
+    days.push({i, day, plan:w.plan[day], r:w.reports[day]});
+  }
+
+  // Missed: past workout days (not today) with no report, or every session skipped
+  const missed = days.filter(x=>x.i>0&&!dayIsRest(x.plan)&&(
+    !x.r?.sessions?.length || x.r.sessions.every(s=>s?.status==="skipped")));
+  if (missed.length) flags.push({level:missed.length>=2?"high":"med",
+    text:`${missed.length} missed or unreported: ${missed.map(x=>x.day).reverse().join(", ")}`});
+
+  // Niggle from the weekly check-in (this week, else last week's)
+  const ck = cur.reports.weekCheckin?.medical ? {m:cur.reports.weekCheckin.medical,last:false}
+    : byOff[-1]?.reports.weekCheckin?.medical ? {m:byOff[-1].reports.weekCheckin.medical,last:true} : null;
+  if (ck) flags.push({level:"high", text:`Niggle${ck.last?" (last week)":""}: "${ck.m.length>50?ck.m.slice(0,50)+"…":ck.m}"`});
+
+  // Resting HR: latest reading vs the average of up to 4 earlier weeks
+  const rhr = weeks.map(w=>parseFloat(w.reports.weekCheckin?.restingHr)).map(v=>v>0?v:null);
+  const li = rhr.length-1 - [...rhr].reverse().findIndex(v=>v!=null);
+  if (li>=weeks.length-2 && li<rhr.length) {
+    const base = rhr.slice(Math.max(0,li-4),li).filter(v=>v!=null);
+    if (base.length>=2) {
+      const avg = base.reduce((a,b)=>a+b,0)/base.length;
+      if (rhr[li]-avg>=5) flags.push({level:"high", text:`Resting HR ${rhr[li]} bpm (usually ~${Math.round(avg)})`});
+    }
+  }
+
+  // Wellbeing in the last 7 days
+  const stressDays = days.filter(x=>parseInt(x.r?.stress)>=4);
+  const sleepDays  = days.filter(x=>x.r?.sleep&&parseInt(x.r.sleep)<=2);
+  if (stressDays.length) flags.push({level:"med", text:`High stress (4–5): ${stressDays.map(x=>x.day).reverse().join(", ")}`});
+  if (sleepDays.length)  flags.push({level:"med", text:`Poor sleep (1–2): ${sleepDays.map(x=>x.day).reverse().join(", ")}`});
+
+  // Easy/recovery sessions reported at effort 8+
+  const hardEasy = days.filter(x=>!dayIsRest(x.plan)&&(x.r?.sessions||[]).some((s,si)=>{
+    const t=sessFirstType(x.plan.sessions[si]||{});
+    return (t==="easy"||t==="recovery")&&parseInt(s?.effort)>=8;
+  }));
+  if (hardEasy.length) flags.push({level:"med", text:`Easy run felt hard (effort 8+): ${hardEasy.map(x=>x.day).reverse().join(", ")}`});
+
+  const score = flags.reduce((s,f)=>s+(f.level==="high"?10:1),0);
+  return {planned, done, flags, score};
 };
 
 const fmtKm = v => (Math.round(v*10)/10).toString();
@@ -2831,21 +2903,20 @@ const CoachDashboard = ({user,onSignOut}) => {
   const [search,setSearch]=useState("");
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState(null);
-  const [weeklyReports,setWeeklyReports]=useState({});
+  const [attention,setAttention]=useState({}); // athleteId -> athleteAttention() result, or {error}
   const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
 
   const loadData=async()=>{
     const [aths,grps]=await Promise.all([dbList("athletes"),dbList("groups")]);
     setAthletes(aths);
     setGroups(grps);
-    // load this week's reports for all athletes for compliance strip
-    const wk=weekKey(0);
-    const repPromises=aths.map(a=>dbGet(`reports/${a.id}/weeks/${wk}`).then(r=>({id:a.id,r})));
-    const reps=await Promise.all(repPromises);
-    const repMap={};
-    reps.forEach(({id,r})=>{repMap[id]=r||{};});
-    setWeeklyReports(repMap);
     setLoading(false);
+    // Flags fill in per athlete as they load; 6 weeks gives the resting-HR baseline
+    aths.forEach(a=>{
+      loadAthleteWeeks(a.id, a.groupId, 6)
+        .then(weeks=>setAttention(prev=>({...prev,[a.id]:athleteAttention(weeks)})))
+        .catch(e=>setAttention(prev=>({...prev,[a.id]:{error:e.message}})));
+    });
   };
 
   useEffect(()=>{loadData();},[]);
@@ -2891,12 +2962,10 @@ const CoachDashboard = ({user,onSignOut}) => {
   const wk0=weekKey(0),today=todayShort();
   const filtered=athletes.filter(a=>a.name.toLowerCase().includes(search.toLowerCase()));
 
-  const getComp=(ath)=>{
-    const reps=weeklyReports[ath.id]||{};
-    // we don't have plans cached here — just show report count
-    const reported=DAYS.filter(d=>reps[d]?.sessions?.length>0).length;
-    return reported>0?reported:null;
-  };
+  // Flagged athletes first (most serious on top), then alphabetical
+  const sorted=[...filtered].sort((a,b)=>((attention[b.id]?.score||0)-(attention[a.id]?.score||0))||a.name.localeCompare(b.name));
+  const flaggedCount=athletes.filter(a=>attention[a.id]?.flags?.length).length;
+  const allLoaded=athletes.every(a=>attention[a.id]);
 
   if(selectedAthlete)return h(AthleteDetail,{athlete:selectedAthlete,groups,onBack:()=>setSelectedAthlete(null),onUpdate:updateAthlete,coachId:user.uid});
   if(showCalendar)return h(SeasonCalendar,{onClose:()=>setShowCalendar(false),isCoach:true});
@@ -2919,7 +2988,7 @@ const CoachDashboard = ({user,onSignOut}) => {
     ),
     h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"},className:"strow"},
       h(StatCard,{label:"Total athletes",value:athletes.length}),
-      h(StatCard,{label:"Groups",value:groups.length,accent:"var(--accent)"}),
+      h(StatCard,{label:"Needs attention",value:allLoaded?flaggedCount:"…",accent:flaggedCount?"var(--danger-text)":"var(--success-text)"}),
       h(StatCard,{label:"Today",value:today})
     ),
     h("div",{style:{display:"flex",gap:8,marginBottom:"1.25rem"}},
@@ -2929,11 +2998,11 @@ const CoachDashboard = ({user,onSignOut}) => {
     addingAthlete&&h(Modal,{title:"Add new athlete",onClose:()=>setAddingAthlete(false),wide:true},h(AthleteForm,{groups,onCancel:()=>setAddingAthlete(false),onSave:addAthlete})),
     showGroups&&h(GroupsManager,{groups,athletes,onAddGroup:addGroup,onDeleteGroup:deleteGroup,onSaveGroupPlan:()=>{},onClose:()=>setShowGroups(false)}),
     !loading&&filtered.length>0&&h("div",{style:{marginBottom:"1.75rem"}},
-      filtered.map(ath=>{
-        const reps=weeklyReports[ath.id]||{};
-        const reported=DAYS.filter(d=>reps[d]?.sessions?.length>0).length;
+      sorted.map(ath=>{
+        const at=attention[ath.id];
         const grp=groups.find(g=>g.id===ath.groupId);
-        return h("div",{key:ath.id,className:"card",style:{marginBottom:8},onClick:()=>setSelectedAthlete(ath)},
+        const high=at?.flags?.some(f=>f.level==="high");
+        return h("div",{key:ath.id,className:"card",style:{marginBottom:8,borderLeft:at?.flags?.length?`3px solid ${high?"var(--danger)":"var(--warning)"}`:undefined},onClick:()=>setSelectedAthlete(ath)},
           h("div",{style:{display:"flex",alignItems:"center",gap:12}},
             h(Avatar,{name:ath.name,sex:ath.sex}),
             h("div",{style:{flex:1,minWidth:0}},
@@ -2943,10 +3012,20 @@ const CoachDashboard = ({user,onSignOut}) => {
                 ath.pb5k&&h("span",{className:"mono",style:{fontSize:11,color:"var(--text-muted2)"}},"5K "+ath.pb5k),
                 grp&&h("span",{style:{fontSize:10,padding:"1px 6px",borderRadius:3,background:"var(--warning-bg)",color:"var(--warning-text)",fontWeight:600}},"📋 "+grp.name)
               ),
-              h("div",{style:{fontSize:12,color:"var(--text-muted)"}},reported>0?"This week: "+reported+" day"+(reported!==1?"s":"")+" reported":"No reports this week")
+              h("div",{style:{fontSize:12,color:"var(--text-muted)"}},
+                !at?"Checking…"
+                : at.error?"Couldn't load: "+at.error
+                : at.planned?`This week: ${at.done} / ${at.planned} sessions done`:"No sessions planned this week"
+              ),
+              at?.flags?.length>0&&h("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}},
+                at.flags.map((f,i)=>h("span",{key:i,style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,
+                  background:f.level==="high"?"var(--danger-bg)":"var(--warning-bg)",color:f.level==="high"?"var(--danger-text)":"var(--warning-text)"}},
+                  (f.level==="high"?"⚠ ":"• ")+f.text))
+              ),
+              at&&!at.error&&!at.flags.length&&at.planned>0&&h("div",{style:{fontSize:11,color:"var(--success-text)",marginTop:4}},"✓ Nothing to flag")
             ),
             h("div",{style:{display:"flex",alignItems:"center",gap:8,flexShrink:0}},
-              reported>0&&h("span",{style:{fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:5,background:"var(--success-bg)",color:"var(--success-text)"}},reported+"d"),
+              at?.planned>0&&h("span",{className:"mono",style:{fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:5,background:"var(--neutral-bg)",color:"var(--text-muted2)"}},at.done+"/"+at.planned),
               h("button",{onClick:e=>{e.stopPropagation();if(window.confirm("Remove "+ath.name+"?"))deleteAthlete(ath.id);},style:{border:"0.5px solid var(--danger)",background:"var(--danger-bg-strong)",cursor:"pointer",color:"var(--danger)",fontSize:13,fontWeight:600,padding:"3px 9px",borderRadius:5}},"✕")
             )
           )
