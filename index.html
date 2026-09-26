@@ -1595,6 +1595,30 @@ const MonthlyWeight = ({current,previous,isCoach,onSave}) => {
   );
 };
 
+// Planned vs actual pace for one part. Only when the plan has a target pace; a target can be a
+// single pace ("5:30", ±5 s/km counts as on target) or a range ("5:20-5:40").
+const PACE_TOLERANCE_SEC = 5;
+const paceCheck = (part, td, dist) => {
+  if (!part?.pace || part.type==="hills") return null;
+  const bounds = String(part.pace).split(/s*[-–]s*/).map(parseMmss).filter(v=>v>0);
+  if (!bounds.length) return null;
+  const actualStr =
+    part.type==="easy"||part.type==="recovery" ? td.actualPace :
+    part.type==="tempo" ? td.tempoPace :
+    part.type==="long"||part.type==="fartlek" ? td.avgPace :
+    part.type==="race"&&td.finishTime&&dist>0 ? formatPaceFromSecPerKm(parseMmss(td.finishTime)/dist) : null;
+  const actual = parseMmss(actualStr);
+  if (!actual) return null;
+  const lo = Math.min(...bounds) - (bounds.length===1?PACE_TOLERANCE_SEC:0);
+  const hi = Math.max(...bounds) + (bounds.length===1?PACE_TOLERANCE_SEC:0);
+  const diff = actual<lo ? actual-lo : actual>hi ? actual-hi : 0; // negative = faster than planned
+  return {target:part.pace, actual:actualStr, diff:Math.round(diff),
+    text: diff===0 ? "on target" : `${Math.abs(Math.round(diff))}s/km ${diff<0?"faster":"slower"}`};
+};
+const PaceCheckChip = ({pc}) => pc && h("span",{style:{display:"inline-block",fontSize:11,fontWeight:600,padding:"1px 7px",borderRadius:4,marginLeft:6,
+    background:pc.diff===0?"var(--success-bg)":"var(--warning-bg)",color:pc.diff===0?"var(--success-text)":"var(--warning-text)"}},
+  "target "+pc.target+" · "+(pc.diff===0?"✓ ":"⚠ ")+pc.text);
+
 // Extract a readable summary from a session report (new or old format)
 const repSummary = (rep, parts) => {
   if (!rep) return null;
@@ -1636,7 +1660,7 @@ const repSummary = (rep, parts) => {
       }
       else if (type==="strength") detail = td.duration ? `${td.duration} min` : "";
       else if (type==="race") detail = td.finishTime ? `finish ${td.finishTime}` : "";
-      lines.push({ label: wt.label, dist, detail, color: wt.dark });
+      lines.push({ label: wt.label, dist, detail, color: wt.dark, pace: paceCheck(part, td, dist) });
     });
   } else {
     // Old format fallback
@@ -1708,7 +1732,11 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                       downloadFitWorkout(file, encodeFitWorkout(wkName, sessionToFitSteps(sess)));
                     }},"⌚  Export to Garmin (.fit)"),
                     rep&&h("div",{style:{marginTop:6,paddingTop:6,borderTop:"0.5px solid var(--neutral-bg)"}},
-                      h("span",{style:{fontWeight:700,fontSize:12,color:SS[rep.status]?.color}},SS[rep.status]?.label)
+                      h("span",{style:{fontWeight:700,fontSize:12,color:SS[rep.status]?.color}},SS[rep.status]?.label),
+                      (repSummary(rep,parts)||[]).map((l,li)=>l.pace&&h("div",{key:li,style:{fontSize:11,marginTop:3}},
+                        parts.length>1&&h("span",{style:{color:l.color,fontWeight:600}},l.label+": "),
+                        h("span",{className:"mono",style:{color:"var(--text-muted2)"}},l.pace.actual+"/km"),
+                        h(PaceCheckChip,{pc:l.pace})))
                     ),
                     si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed var(--border)",margin:"10px 0"}})
                   );
@@ -1794,7 +1822,8 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false)
       const multiPart = (sess.parts||[]).length>1;
       const paceStr = (repSummary(rep,sess.parts)||[]).map(l=>{
         const distStr = multiPart&&l.dist>0 ? l.dist.toFixed(1)+"km " : "";
-        return (distStr+l.detail).trim();
+        const pc = l.pace ? ` (target ${l.pace.target}: ${l.pace.text})` : "";
+        return (distStr+l.detail+pc).trim();
       }).filter(Boolean).join(" + ");
       const hrStr = rep?.hr ? rep.hr+"bpm" : "";
       return [paceStr,hrStr].filter(Boolean).join(" · ");
@@ -2427,13 +2456,14 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
                 rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
                 si===0&&r.sleep&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
                 si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},stressEmoji(r.stress)+" STRESS"),h("strong",null,r.stress+"/5")),
-                rs?.some(l=>l.detail)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
+                rs?.some(l=>l.detail||l.pace)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
                   h("summary",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600,cursor:"pointer"}},"SESSION DETAIL"),
                   h("div",{style:{marginTop:4}},
-                    rs.map((line,li)=>line.detail&&h("div",{key:li,style:{fontSize:12,marginBottom:2}},
+                    rs.map((line,li)=>(line.detail||line.pace)&&h("div",{key:li,style:{fontSize:12,marginBottom:2}},
                       line.label&&h("span",{style:{fontWeight:600,color:line.color,marginRight:6}},line.label+":"),
                       line.dist>0&&h("span",{className:"mono",style:{marginRight:6}},line.dist+"km"),
-                      h("span",null,line.detail)
+                      h("span",null,line.detail),
+                      h(PaceCheckChip,{pc:line.pace})
                     ))
                   )
                 ),
@@ -2604,13 +2634,14 @@ const AthleteHome = ({user,onSignOut}) => {
               rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
               si===0&&r.sleep&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
               si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},stressEmoji(r.stress)+" STRESS"),h("strong",null,r.stress+"/5")),
-              rs?.some(l=>l.detail)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
+              rs?.some(l=>l.detail||l.pace)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
                 h("summary",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600,cursor:"pointer"}},"SESSION DETAIL"),
                 h("div",{style:{marginTop:4}},
-                  rs.map((line,li)=>line.detail&&h("div",{key:li,style:{fontSize:12,marginBottom:2}},
+                  rs.map((line,li)=>(line.detail||line.pace)&&h("div",{key:li,style:{fontSize:12,marginBottom:2}},
                     line.label&&h("span",{style:{fontWeight:600,color:line.color,marginRight:6}},line.label+":"),
                     line.dist>0&&h("span",{className:"mono",style:{marginRight:6}},line.dist+"km"),
-                    h("span",null,line.detail)
+                    h("span",null,line.detail),
+                    h(PaceCheckChip,{pc:line.pace})
                   ))
                 )
               ),
