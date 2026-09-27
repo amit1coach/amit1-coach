@@ -1620,6 +1620,55 @@ const PaceCheckChip = ({pc}) => pc && h("span",{style:{display:"inline-block",fo
     background:pc.diff===0?"var(--success-bg)":"var(--warning-bg)",color:pc.diff===0?"var(--success-text)":"var(--warning-text)"}},
   "target "+pc.target+" · "+(pc.diff===0?"✓ ":"⚠ ")+pc.text);
 
+// Long run (speed-game part 2): the reported paces as five columns, violet → light green; taller = faster
+const LONG_RUN_COLUMNS = [
+  {key:"part1Pace",      label:"Base",     color:"#6D3FD9"},
+  {key:"avgPace",        label:"Total",    color:"#5570D8"},
+  {key:"transitionPace", label:"Recovery", color:"#3598C6"},
+  {key:"part2AvgPace",   label:"Exercise", color:"#2DB594"},
+  {key:"fasterPace",     label:"Fast",     color:"#8ED77A"},
+];
+const fmtPaceSec = sec => Math.floor(sec/60)+":"+String(Math.round(sec%60)).padStart(2,"0");
+const LongRunPaceChart = ({td}) => {
+  const cols = LONG_RUN_COLUMNS.map(c=>({...c, sec:parseMmss(td[c.key])})).filter(c=>c.sec>0);
+  if (cols.length<2) return null;
+  const secs = cols.map(c=>c.sec);
+  const slow = Math.ceil((Math.max(...secs)+15)/30)*30, fast = Math.floor((Math.min(...secs)-5)/30)*30;
+  // Columns sit close together: fixed 40px bars with an 8px gap, so the chart is only as wide as it needs to be
+  const bw=40, band=bw+8, L=38, W=L+band*LONG_RUN_COLUMNS.length+4, H=175, top=22, base=H-24;
+  const y = v => base-(slow-v)/(slow-fast)*(base-top);
+  const ticks=[]; for(let v=slow; v>=fast; v-=30) ticks.push(v);
+  return h("div",{style:{maxWidth:W*1.15,marginTop:6}},
+    h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600,marginBottom:2}},"PACE PER KM · TALLER = FASTER"),
+    h("svg",{viewBox:`0 0 ${W} ${H}`,width:"100%",role:"img","aria-label":"Long run paces: "+cols.map(c=>c.label+" "+td[c.key]).join(", ")},
+      ticks.map(v=>h("g",{key:v},
+        h("line",{x1:L,x2:W-4,y1:y(v),y2:y(v),stroke:"var(--border)",strokeWidth:v===slow?1:0.5}),
+        h("text",{x:L-5,y:y(v)+3,textAnchor:"end",fontSize:10,fill:"var(--text-muted)",fontFamily:"'DM Mono',monospace"},fmtPaceSec(v))
+      )),
+      LONG_RUN_COLUMNS.map((c,i)=>{
+        const col=cols.find(x=>x.key===c.key), cx=L+band*i+band/2;
+        const lbl=h("text",{x:cx,y:H-8,textAnchor:"middle",fontSize:10,fill:"var(--text-muted2)"},c.label);
+        if(!col) return h("g",{key:c.key},lbl,h("text",{x:cx,y:base-4,textAnchor:"middle",fontSize:10,fill:"var(--text-muted)"},"–"));
+        const t=y(col.sec), x=cx-bw/2, r=Math.min(4,base-t);
+        return h("g",{key:c.key},
+          h("path",{d:`M${x},${base}V${t+r}Q${x},${t} ${x+r},${t}H${x+bw-r}Q${x+bw},${t} ${x+bw},${t+r}V${base}Z`,fill:c.color}),
+          h("text",{x:cx,y:t-5,textAnchor:"middle",fontSize:12,fontWeight:600,fill:"var(--text)",fontFamily:"'DM Mono',monospace"},fmtPaceSec(col.sec)),
+          lbl
+        );
+      })
+    )
+  );
+};
+// Charts for every speed-game long-run part in a session report
+const LongRunCharts = ({rep, parts}) => {
+  const charts = (rep?.partReps||[]).map((pr,i)=>{
+    const td=pr?.typeData||{};
+    if (parts?.[i]?.type!=="long" || (td.part2Type||"speedgame")!=="speedgame") return null;
+    return h(LongRunPaceChart,{key:i,td});
+  }).filter(Boolean);
+  return charts.length ? h("div",{style:{gridColumn:"1/-1"}},charts) : null;
+};
+
 // Extract a readable summary from a session report (new or old format)
 const repSummary = (rep, parts) => {
   if (!rep) return null;
@@ -1737,7 +1786,8 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                       (repSummary(rep,parts)||[]).map((l,li)=>l.pace&&h("div",{key:li,style:{fontSize:11,marginTop:3}},
                         parts.length>1&&h("span",{style:{color:l.color,fontWeight:600}},l.label+": "),
                         h("span",{className:"mono",style:{color:"var(--text-muted2)"}},l.pace.actual+"/km"),
-                        h(PaceCheckChip,{pc:l.pace})))
+                        h(PaceCheckChip,{pc:l.pace}))),
+                      h(LongRunCharts,{rep,parts})
                     ),
                     si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed var(--border)",margin:"10px 0"}})
                   );
@@ -2441,6 +2491,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
             const wt=WT[sessFirstType(sess)]||WT.easy;
             const km=sessTotalKm(sess);
             const rs=repSummary(rep,sess.parts);
+            const lrChart=h(LongRunCharts,{rep,parts:sess.parts});
             const hasGroups=(rep.garminGroups||[]).length>0;
             return h("div",{key:si,style:{marginBottom:si<sessions.length-1?12:0}},
               sessions.length>1&&h("div",{style:{fontSize:11,fontWeight:700,color:wt.dark,marginBottom:6}},"Session "+(si+1)+": "+wt.label),
@@ -2457,7 +2508,8 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
                 rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
                 si===0&&r.sleep&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
                 si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},stressEmoji(r.stress)+" STRESS"),h("strong",null,r.stress+"/5")),
-                rs?.some(l=>l.detail||l.pace)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
+                lrChart,
+              rs?.some(l=>l.detail||l.pace)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
                   h("summary",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600,cursor:"pointer"}},"SESSION DETAIL"),
                   h("div",{style:{marginTop:4}},
                     rs.map((line,li)=>(line.detail||line.pace)&&h("div",{key:li,style:{fontSize:12,marginBottom:2}},
@@ -2625,6 +2677,7 @@ const AthleteHome = ({user,onSignOut}) => {
           r?.sessions&&r.sessions.map((rep,si)=>{
             if(!rep)return null;
             const rs=repSummary(rep,sessions[si]?.parts);
+            const lrChart=h(LongRunCharts,{rep,parts:sessions[si]?.parts});
             const hasGroups=(rep.garminGroups||[]).length>0;
             return h("div",{key:si,style:{marginTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}},
               rep.wu&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"WARM UP"),h("strong",{className:"mono"},rep.wu+" km")),
@@ -2635,6 +2688,7 @@ const AthleteHome = ({user,onSignOut}) => {
               rep.effort&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"EFFORT"),h("strong",null,rep.effort+"/10")),
               si===0&&r.sleep&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"😴 SLEEP"),h("strong",null,r.sleep+"/5")),
               si===0&&r.stress&&h("div",null,h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},stressEmoji(r.stress)+" STRESS"),h("strong",null,r.stress+"/5")),
+              lrChart,
               rs?.some(l=>l.detail||l.pace)&&h("details",{key:"detail",open:!hasGroups,style:{gridColumn:"1/-1"}},
                 h("summary",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600,cursor:"pointer"}},"SESSION DETAIL"),
                 h("div",{style:{marginTop:4}},
