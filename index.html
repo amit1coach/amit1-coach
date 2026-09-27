@@ -1634,11 +1634,11 @@ const LongRunPaceChart = ({td}) => {
   if (cols.length<2) return null;
   const secs = cols.map(c=>c.sec);
   const slow = Math.ceil((Math.max(...secs)+15)/30)*30, fast = Math.floor((Math.min(...secs)-5)/30)*30;
-  const W=360, H=175, L=38, top=22, base=H-24;
+  // Columns sit close together: fixed 40px bars with an 8px gap, so the chart is only as wide as it needs to be
+  const bw=40, band=bw+8, L=38, W=L+band*LONG_RUN_COLUMNS.length+4, H=175, top=22, base=H-24;
   const y = v => base-(slow-v)/(slow-fast)*(base-top);
   const ticks=[]; for(let v=slow; v>=fast; v-=30) ticks.push(v);
-  const band=(W-L-4)/LONG_RUN_COLUMNS.length, bw=Math.min(40,band*0.7);
-  return h("div",{style:{maxWidth:420,marginTop:6}},
+  return h("div",{style:{maxWidth:W*1.15,marginTop:6}},
     h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600,marginBottom:2}},"PACE PER KM · TALLER = FASTER"),
     h("svg",{viewBox:`0 0 ${W} ${H}`,width:"100%",role:"img","aria-label":"Long run paces: "+cols.map(c=>c.label+" "+td[c.key]).join(", ")},
       ticks.map(v=>h("g",{key:v},
@@ -1647,7 +1647,7 @@ const LongRunPaceChart = ({td}) => {
       )),
       LONG_RUN_COLUMNS.map((c,i)=>{
         const col=cols.find(x=>x.key===c.key), cx=L+band*i+band/2;
-        const lbl=h("text",{x:cx,y:H-8,textAnchor:"middle",fontSize:11,fill:"var(--text-muted2)"},c.label);
+        const lbl=h("text",{x:cx,y:H-8,textAnchor:"middle",fontSize:10,fill:"var(--text-muted2)"},c.label);
         if(!col) return h("g",{key:c.key},lbl,h("text",{x:cx,y:base-4,textAnchor:"middle",fontSize:10,fill:"var(--text-muted)"},"–"));
         const t=y(col.sec), x=cx-bw/2, r=Math.min(4,base-t);
         return h("g",{key:c.key},
