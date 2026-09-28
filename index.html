@@ -2170,11 +2170,15 @@ const FartlekTrendChart = ({sessions}) => {
   const hasPace = paces.length>0;
   const slow = hasPace ? Math.ceil((Math.max(...paces)+15)/15)*15 : 360; // room for labels under the slowest dots
   const fast = hasPace ? Math.max(PACE_AXIS_MIN_SEC, Math.floor((Math.min(...paces)-12)/15)*15) : 240;
-  const pTop=22, pBase=170, py=v=>pBase-(slow-v)/(slow-fast)*(pBase-pTop);
+  // The average's number sits between the faster-parts dot and the average dot, so the pace chart grows
+  // tall enough to keep those two dots at least 26px apart in every session (up to a 560px chart)
+  const avgFastGaps = sessions.filter(s=>s.avg>0&&s.fast>0&&s.avg>s.fast).map(s=>s.avg-s.fast);
+  const pxPerSec = Math.max(148/(slow-fast), avgFastGaps.length ? 26/Math.min(...avgFastGaps) : 0);
+  const pTop=22, pBase=pTop+Math.min(560, Math.round(pxPerSec*(slow-fast))), py=v=>pBase-(slow-v)/(slow-fast)*(pBase-pTop);
   const pStep = slow-fast>90 ? 30 : 15;
   const pTicks=[]; for(let v=slow; v>=fast; v-=pStep) pTicks.push(v);
   // Bottom: distance
-  const dTop=212, dBase=300, H=322;
+  const dTop=pBase+42, dBase=dTop+88, H=dBase+22;
   const kmMax = Math.max(4, ...sessions.map(s=>s.km));
   const kStep = [2,4,5,10].find(s=>kmMax/s<=3) || 10, kMax = Math.ceil(kmMax/kStep)*kStep;
   const dy=v=>dBase-v/kMax*(dBase-dTop);
