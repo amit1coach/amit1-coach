@@ -1630,12 +1630,15 @@ const LONG_RUN_COLUMNS = [
   {key:"part2AvgPace",   label:"Exercise", color:"#2DB594"},
   {key:"fasterPace",     label:"Fast",     color:"#8ED77A"},
 ];
+// Pace charts never go faster than 3:00/km; anything faster is treated as a typo and left out
+const PACE_AXIS_MIN_SEC = 180;
+const chartPace = str => { const v = parseMmss(str); return v >= PACE_AXIS_MIN_SEC ? v : 0; };
 const fmtPaceSec = sec => Math.floor(sec/60)+":"+String(Math.round(sec%60)).padStart(2,"0");
 const LongRunPaceChart = ({td}) => {
-  const cols = LONG_RUN_COLUMNS.map(c=>({...c, sec:parseMmss(td[c.key])})).filter(c=>c.sec>0);
+  const cols = LONG_RUN_COLUMNS.map(c=>({...c, sec:chartPace(td[c.key])})).filter(c=>c.sec>0);
   if (cols.length<2) return null;
   const secs = cols.map(c=>c.sec);
-  const slow = Math.ceil((Math.max(...secs)+15)/30)*30, fast = Math.floor((Math.min(...secs)-5)/30)*30;
+  const slow = Math.ceil((Math.max(...secs)+15)/30)*30, fast = Math.max(PACE_AXIS_MIN_SEC, Math.floor((Math.min(...secs)-5)/30)*30);
   // Columns sit close together: fixed 40px bars with an 8px gap, so the chart is only as wide as it needs to be
   const bw=40, band=bw+8, L=38, W=L+band*LONG_RUN_COLUMNS.length+4, H=175, top=22, base=H-24;
   const y = v => base-(slow-v)/(slow-fast)*(base-top);
@@ -2140,7 +2143,7 @@ const fartlekSessions = (rawWeeks) => {
       if (part.type!=="fartlek") return;
       const pr = w.reports[day]?.sessions?.[si]?.partReps?.[pi]; if (!pr) return;
       const td = pr.typeData||{};
-      const avg = parseMmss(td.avgPace), fast = parseMmss(td.fasterPace);
+      const avg = chartPace(td.avgPace), fast = chartPace(td.fasterPace);
       const km = parseFloat(pr.actualDistance||td.actualDistance)||0;
       if (!avg && !fast && !km) return;
       const date = new Date(w.start); date.setDate(date.getDate()+di);
@@ -2166,7 +2169,7 @@ const FartlekTrendChart = ({sessions}) => {
   const paces = sessions.flatMap(s=>[s.avg,s.fast]).filter(v=>v>0);
   const hasPace = paces.length>0;
   const slow = hasPace ? Math.ceil((Math.max(...paces)+8)/15)*15 : 360;
-  const fast = hasPace ? Math.floor((Math.min(...paces)-12)/15)*15 : 240;
+  const fast = hasPace ? Math.max(PACE_AXIS_MIN_SEC, Math.floor((Math.min(...paces)-12)/15)*15) : 240;
   const pTop=22, pBase=170, py=v=>pBase-(slow-v)/(slow-fast)*(pBase-pTop);
   const pStep = slow-fast>90 ? 30 : 15;
   const pTicks=[]; for(let v=slow; v>=fast; v-=pStep) pTicks.push(v);
