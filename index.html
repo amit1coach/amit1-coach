@@ -2165,20 +2165,31 @@ const FartlekTrendChart = ({sessions}) => {
   }, []);
 
   const L=40, Rm=18, pw=width-L-Rm, n=sessions.length, band=pw/n, cx=i=>L+band*i+band/2;
-  // Top: paces, higher = faster
+  // Top: paces, higher = faster. The scale is as short as it can be while every number fits:
+  // faster-parts numbers go above their dots, transition numbers below, and the average's number
+  // above its dot, or below it when the faster-parts dot is too close.
+  const LABEL_GAP=26, DOT_GAP=10;                 // px between dots for a number to fit between / for dots to stay apart
   const paces = sessions.flatMap(s=>[s.avg,s.fast,s.trans]).filter(v=>v>0);
-  const hasPace = paces.length>0;
-  const slow = hasPace ? Math.ceil((Math.max(...paces)+15)/15)*15 : 360; // room for labels under the slowest dots
-  const fast = hasPace ? Math.max(PACE_AXIS_MIN_SEC, Math.floor((Math.min(...paces)-12)/15)*15) : 240;
-  // The average's number sits between the faster-parts dot and the average dot, so the pace chart grows
-  // tall enough to keep those two dots at least 26px apart in every session (up to a 560px chart)
-  const avgFastGaps = sessions.filter(s=>s.avg>0&&s.fast>0&&s.avg>s.fast).map(s=>s.avg-s.fast);
-  const pxPerSec = Math.max(148/(slow-fast), avgFastGaps.length ? 26/Math.min(...avgFastGaps) : 0);
-  const pTop=22, pBase=pTop+Math.min(560, Math.round(pxPerSec*(slow-fast))), py=v=>pBase-(slow-v)/(slow-fast)*(pBase-pTop);
-  const pStep = slow-fast>90 ? 30 : 15;
-  const pTicks=[]; for(let v=slow; v>=fast; v-=pStep) pTicks.push(v);
-  // Bottom: distance
-  const dTop=pBase+42, dBase=dTop+88, H=dBase+22;
+  const lo = paces.length ? Math.min(...paces) : 240, hi = paces.length ? Math.max(...paces) : 300;
+  const span = Math.max(hi-lo, 10);
+  const need = [80/span];                         // at least an 80px pace chart, so the trend isn't flat
+  sessions.forEach(s=>{
+    const up = s.avg>0&&s.fast>0 ? s.avg-s.fast : Infinity, down = s.avg>0&&s.trans>0 ? s.trans-s.avg : Infinity;
+    if (up>0 && down>0 && Math.max(up,down)<Infinity) need.push(LABEL_GAP/Math.max(up,down)); // room above or below
+    [up,down].forEach(g=>{ if(g>0&&g<Infinity) need.push(DOT_GAP/g); });
+  });
+  const pps = Math.min(Math.max(...need), 400/span); // px per second, capped at a 400px chart
+  const pTop=22, pBase=pTop+Math.round(span*pps), py=v=>pTop+(v-lo)*pps;
+  const pStep = span>90 ? 30 : 15;
+  const pTicks=[]; for(let v=Math.ceil(lo/pStep)*pStep; v<=lo+span; v+=pStep) pTicks.push(v);
+  if (!pTicks.length) pTicks.push(lo);
+  const avgPlace = s => {
+    const aboveOk = !(s.fast>0) || (s.avg-s.fast)*pps>=LABEL_GAP;
+    const belowOk = !(s.trans>0) || (s.trans-s.avg)*pps>=LABEL_GAP;
+    return aboveOk || !belowOk ? "above" : "below";
+  };
+  // Bottom: distance, right under the pace chart
+  const dTop=pBase+44, dBase=dTop+88, H=dBase+22;
   const kmMax = Math.max(4, ...sessions.map(s=>s.km));
   const kStep = [2,4,5,10].find(s=>kmMax/s<=3) || 10, kMax = Math.ceil(kmMax/kStep)*kStep;
   const dy=v=>dBase-v/kMax*(dBase-dTop);
@@ -2197,7 +2208,6 @@ const FartlekTrendChart = ({sessions}) => {
     h("svg",{width,height:H,role:"img","aria-label":"Fartlek faster-part, average and transition pace, and distance, per session",style:{display:"block"}},
       hover!=null && h("rect",{x:L+band*hover,y:pTop-12,width:band,height:dBase-pTop+12,fill:"var(--surface-alt)"}),
       sessions.map((s,i)=>h("line",{key:"g"+s.key,x1:cx(i),x2:cx(i),y1:pTop,y2:dBase,stroke:"var(--border)",strokeWidth:0.5,opacity:0.6})),
-      h("text",{x:L,y:12,fontSize:10,fill:"var(--text-muted)"},"Pace per km · higher = faster"),
       pTicks.map(v=>h("g",{key:"p"+v},
         h("line",{x1:L,x2:width-Rm,y1:py(v),y2:py(v),stroke:"var(--border)",strokeWidth:0.5}),
         h("text",{x:L-5,y:py(v)+3,textAnchor:"end",fontSize:10,fill:"var(--text-muted)",fontFamily:"'DM Mono',monospace"},fmtPaceSec(v))
@@ -2206,17 +2216,14 @@ const FartlekTrendChart = ({sessions}) => {
       line("fast","var(--viz-fk-fast)","6 4"),
       line("trans","var(--viz-fk-trans)","1 4"),
       sessions.map((s,i)=>{
-        // Faster parts' number above its dot, transition's below its dot. The average (usually in the middle)
-        // goes above, or below when it's close to the faster pace; if it's squeezed from both sides it's hover-only.
-        const near = (a,b) => a>0&&b>0&&Math.abs(py(a)-py(b))<24;
-        const avgBelow = near(s.avg,s.fast), avgHidden = avgBelow && near(s.avg,s.trans);
+        const avgBelow = avgPlace(s)==="below";
         return h("g",{key:"d"+s.key},
           s.avg>0&&h("circle",{cx:cx(i),cy:py(s.avg),r:4.5,fill:"var(--viz-fk-avg)",stroke:"var(--surface)",strokeWidth:2}),
           s.fast>0&&h("circle",{cx:cx(i),cy:py(s.fast),r:4.5,fill:"var(--viz-fk-fast)",stroke:"var(--surface)",strokeWidth:2}),
           s.trans>0&&h("circle",{cx:cx(i),cy:py(s.trans),r:4.5,fill:"var(--viz-fk-trans)",stroke:"var(--surface)",strokeWidth:2}),
           labelled(i)&&s.trans>0&&h("text",{x:cx(i),y:py(s.trans)+17,textAnchor:"middle",fontSize:lblFont,fontWeight:600,fill:"var(--viz-fk-trans-text)",fontFamily:"'DM Mono',monospace"},fmtPaceSec(s.trans)),
           labelled(i)&&s.fast>0&&h("text",{x:cx(i),y:py(s.fast)-9,textAnchor:"middle",fontSize:lblFont,fontWeight:600,fill:"var(--viz-fk-fast-text)",fontFamily:"'DM Mono',monospace"},fmtPaceSec(s.fast)),
-          labelled(i)&&!avgHidden&&s.avg>0&&h("text",{x:cx(i),y:avgBelow?py(s.avg)+17:py(s.avg)-9,textAnchor:"middle",fontSize:lblFont,fontWeight:600,fill:"var(--viz-fk-avg-text)",fontFamily:"'DM Mono',monospace"},fmtPaceSec(s.avg))
+          labelled(i)&&s.avg>0&&h("text",{x:cx(i),y:avgBelow?py(s.avg)+17:py(s.avg)-9,textAnchor:"middle",fontSize:lblFont,fontWeight:600,fill:"var(--viz-fk-avg-text)",fontFamily:"'DM Mono',monospace"},fmtPaceSec(s.avg))
         );
       }),
       h("text",{x:L,y:dTop-8,fontSize:10,fill:"var(--text-muted)"},"Distance (km)"),
@@ -2258,7 +2265,9 @@ const FartlekTrend = ({rawWeeks}) => {
     lbl);
   return h("div",{style:{background:"var(--surface)",border:"0.5px solid var(--border)",borderRadius:12,padding:"14px 16px",marginTop:14}},
     h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:8,marginBottom:8}},
-      h("div",{style:{fontSize:14,fontWeight:700}},"Fartlek — pace & distance"),
+      h("div",null,
+        h("div",{style:{fontSize:14,fontWeight:700}},"Fartlek — pace & distance"),
+        h("div",{style:{fontSize:10,color:"var(--text-muted)"}},"Pace per km · higher = faster")),
       h("div",{style:{display:"flex",gap:14,fontSize:12,color:"var(--text-muted2)",flexWrap:"wrap"}},
         key("var(--viz-fk-fast)","Faster parts pace","5 3"),
         key("var(--viz-fk-avg)","Average pace"),
