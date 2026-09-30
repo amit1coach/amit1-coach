@@ -1665,13 +1665,33 @@ const LongRunPaceChart = ({td}) => {
   );
 };
 // Charts for every speed-game long-run part in a session report
+// A long run planned as several consecutive "Long run" parts is one run: the distances add up and each
+// pace is the distance-weighted average over the parts that reported it (a plain average if none has a distance).
+const weightedPace = list => {
+  const w = list.filter(x=>x.sec>0); if (!w.length) return 0;
+  const km = w.reduce((a,x)=>a+x.km,0);
+  return km>0 ? w.reduce((a,x)=>a+x.sec*x.km,0)/km : w.reduce((a,x)=>a+x.sec,0)/w.length;
+};
+const longPartsOf = (rep, parts) => (rep?.partReps||[]).map((pr,i)=>
+  parts?.[i]?.type==="long"&&pr ? {td:pr.typeData||{}, km:parseFloat(pr.actualDistance||pr.typeData?.actualDistance)||0} : null
+).filter(Boolean);
+const combineLongParts = items => {
+  const sg = items.filter(x=>(x.td.part2Type||"speedgame")==="speedgame"); // part-2 paces only exist on speed-game parts
+  const wp = (list,key) => weightedPace(list.map(x=>({sec:chartPace(x.td[key]), km:x.km})));
+  const f = sec => sec>0 ? fmtPaceSec(Math.round(sec)) : "";
+  return {
+    km: items.reduce((a,x)=>a+x.km,0),
+    speedgame: sg.length>0,
+    td: {avgPace:f(wp(items,"avgPace")), part1Pace:f(wp(items,"part1Pace")),
+      transitionPace:f(wp(sg,"transitionPace")), part2AvgPace:f(wp(sg,"part2AvgPace")), fasterPace:f(wp(sg,"fasterPace"))},
+  };
+};
+// One chart per session: all its long-run parts combined (speed-game long runs only)
 const LongRunCharts = ({rep, parts}) => {
-  const charts = (rep?.partReps||[]).map((pr,i)=>{
-    const td=pr?.typeData||{};
-    if (parts?.[i]?.type!=="long" || (td.part2Type||"speedgame")!=="speedgame") return null;
-    return h(LongRunPaceChart,{key:i,td});
-  }).filter(Boolean);
-  return charts.length ? h("div",{style:{gridColumn:"1/-1"}},charts) : null;
+  const items = longPartsOf(rep, parts);
+  if (!items.length) return null;
+  const c = combineLongParts(items);
+  return c.speedgame ? h("div",{style:{gridColumn:"1/-1"}},h(LongRunPaceChart,{td:c.td})) : null;
 };
 
 // Extract a readable summary from a session report (new or old format)
@@ -2155,10 +2175,21 @@ const partSessions = (rawWeeks, type, paceOf) => {
 };
 const fartlekSessions = rawWeeks => partSessions(rawWeeks, "fartlek", td => ({
   fast: chartPace(td.fasterPace), avg: chartPace(td.avgPace), trans: chartPace(td.transitionPace)}));
-// Long runs: speed-game part-2 pace on top (speed-game long runs only), overall average, base pace below
-const longRunSessions = rawWeeks => partSessions(rawWeeks, "long", td => ({
-  fast: (td.part2Type||"speedgame")==="speedgame" ? chartPace(td.part2AvgPace) : 0,
-  avg: chartPace(td.avgPace), trans: chartPace(td.part1Pace)}));
+// Long runs: one point per session (its long-run parts combined). Speed-game part-2 pace on top
+// (speed-game long runs only), overall average, base pace below.
+const longRunSessions = rawWeeks => {
+  const out = [];
+  rawWeeks.forEach(w => DAYS.forEach((day, di) => (w.plan[day]?.sessions||[]).forEach((sess, si) => {
+    const items = longPartsOf(w.reports[day]?.sessions?.[si], sess.parts);
+    if (!items.length) return;
+    const c = combineLongParts(items);
+    const fast = chartPace(c.td.part2AvgPace), avg = chartPace(c.td.avgPace), trans = chartPace(c.td.part1Pace);
+    if (!fast && !avg && !trans && !c.km) return;
+    const date = new Date(w.start); date.setDate(date.getDate()+di);
+    out.push({key:`${w.wk}-${day}-${si}`, date, fast, avg, trans, km:c.km});
+  })));
+  return out;
+};
 
 const PaceTrendChart = ({sessions, names}) => {
   const wrapRef = useRef(null);
