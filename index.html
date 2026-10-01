@@ -408,20 +408,30 @@ const expandWktRows = (rows, pattern="alternate") => {
   });
   return steps;
 };
+// Time and Lap rows cover an unknown distance, so the coach can give an estimate (estKm, for the whole
+// row, all reps) — it counts toward the part's planned km. Distance rows are exact and never need one.
+const wktRowEstKm = r => (r.mode==="time"||r.mode==="lap") ? (parseFloat(r.estKm)||0) : 0;
+const wktTotals = (rows, pattern) => {
+  const expanded = expandWktRows(rows, pattern);
+  const min = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
+  const exactKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
+  const estKm = wktValidRows(rows).reduce((t,r)=>t+wktRowEstKm(r),0);
+  return {expanded, min, km:exactKm+estKm, est:estKm>0};
+};
 // One-line read-only summary of the structured rows, e.g. "3×6min In / 2×4min Out · 26 min total".
 const wktRowsSummary = part => {
   const pattern = wktPatternOf(part);
   const expanded = expandWktRows(getWktRows(part), pattern);
   if(!expanded.length) return null;
   const groups = wktGroups(getWktRows(part), pattern);
-  const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
-  const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
+  const {min:totalMin, km:totalKm, est} = wktTotals(getWktRows(part), pattern);
   // A Rec row also attaches to the preceding step with " / " instead of " → ".
   const isRec = wktIsRec;
-  const label = r=>r.mode==="lap"
+  const estStr = r => wktRowEstKm(r)>0 ? " ≈"+wktRowEstKm(r)+"km" : "";
+  const label = r=>(r.mode==="lap"
     ? (wktRowReps(r)>1?wktRowReps(r)+"×":"")+(wktRowLabel(r)||"open")+" (Lap)"
-    : parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+(wktRowLabel(r)?" "+wktRowLabel(r):"");
-  const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?totalKm.toFixed(1)+" km":null].filter(Boolean).join(" + ");
+    : parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+(wktRowLabel(r)?" "+wktRowLabel(r):""))+estStr(r);
+  const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?(est?"≈":"")+totalKm.toFixed(1)+" km":null].filter(Boolean).join(" · ");
   const body = groups.map((g,i)=>(i===0?"":isRec(g[0])?" / ":" → ")+g.map(label).join(" / ")).join("");
   return body+(totals?" · "+totals+" total":"");
 };
@@ -562,7 +572,7 @@ const WktRows = ({part, onChange}) => {
   // Keep part.distance (the number sessTotalKm actually sums) in sync with the rows,
   // the same way HillPlanRows does — otherwise the day/session "Total KMs" header can
   // silently drift from what the rows below compute.
-  const kmOf = rs => expandWktRows(rs, pattern).reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
+  const kmOf = rs => wktTotals(rs, pattern).km;
   const update = (i,k,v) => {
     const nr=rows.map((r,idx)=>idx===i?{...r,[k]:v}:r);
     onChange({...part, wktRows:nr, distance:kmOf(nr).toFixed(3)});
@@ -575,9 +585,7 @@ const WktRows = ({part, onChange}) => {
     const nr=rows.filter((_,idx)=>idx!==i);
     onChange({...part, wktRows:nr, distance:kmOf(nr).toFixed(3)});
   };
-  const expanded = expandWktRows(rows, pattern);
-  const totalMin = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
-  const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
+  const {expanded, min:totalMin, km:totalKm, est} = wktTotals(rows, pattern);
   return h("div",{style:{marginTop:6}},
     h("div",{style:{display:"flex",gap:6,marginBottom:8}},
       WKT_PATTERNS.map(([k,label])=>h("button",{key:k,onClick:()=>onChange({...part,wktPattern:k}),style:{padding:"3px 9px",fontSize:11,fontWeight:600,borderRadius:4,cursor:"pointer",
@@ -615,11 +623,18 @@ const WktRows = ({part, onChange}) => {
       ),
       h("input",{type:"number",value:row.reps||"",onChange:e=>update(i,"reps",e.target.value),placeholder:"1",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       rows.length>1?h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:14,lineHeight:1,padding:0}},"×"):h("div")
-    ))),
+    ),
+      (row.mode==="time"||row.mode==="lap")&&h("div",{style:{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--text-muted)",margin:"-2px 0 5px 8px"}},
+        "≈",
+        h("input",{type:"number",step:"0.1",value:row.estKm||"",onChange:e=>update(i,"estKm",e.target.value),placeholder:"–",
+          style:{width:52,padding:"2px 5px",fontSize:11,fontFamily:"'DM Mono',monospace"}}),
+        "km for this row (estimate, counts toward planned total)"
+      )
+    )),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
       h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
       (totalMin>0||totalKm>0)&&h("span",{style:{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}},
-        expanded.length+" steps"+(totalMin>0?" · "+fmtMin(totalMin)+" min":"")+(totalKm>0?" · "+totalKm.toFixed(1)+" km":"")
+        expanded.length+" steps"+(totalMin>0?" · "+fmtMin(totalMin)+" min":"")+(totalKm>0?" · "+(est?"≈":"")+totalKm.toFixed(1)+" km":"")
       )
     )
   );
