@@ -367,13 +367,18 @@ const parseMin = v => {
   return parseFloat(s)||0;
 };
 const fmtMin = m => { const t=Math.round(m*60), mm=Math.floor(t/60), ss=t%60; return ss?mm+":"+String(ss).padStart(2,"0"):String(mm); };
-// Row units: "time" (min), "distance" (km), "meters" (m — used by Intervals parts).
-const wktRowValue = r => r.mode==="time" ? parseMin(r.value) : (parseFloat(r.value)||0);
-const wktValidRows = rows => rows.filter(r=>wktRowValue(r)>0 && (parseInt(r.reps)||0)>0);
+// Row units: "time" (min), "distance" (km), "meters" (m — used by Intervals parts), and "lap": an open
+// step that lasts until the athlete presses Lap (e.g. "to 6.0k total" after a timed block). A lap row
+// needs no value, and its reps default to 1.
+const wktRowValue = r => r.mode==="lap" ? 1 : r.mode==="time" ? parseMin(r.value) : (parseFloat(r.value)||0);
+const wktRowReps = r => parseInt(r.reps) || (r.mode==="lap" ? 1 : 0);
+const wktValidRows = rows => rows.filter(r=>wktRowValue(r)>0 && wktRowReps(r)>0);
 // A row labeled "Rec" is a recovery: its label is never printed (plan summary or Garmin step name).
 const wktIsRec = r => (r.label||"").trim().toLowerCase()==="rec";
 const wktRowLabel = r => wktIsRec(r) ? "" : (r.label||"").trim();
-const wktRowToStep = r => r.mode==="distance"
+const wktRowToStep = r => r.mode==="lap"
+  ? {label:wktRowLabel(r)||"Lap", durationType:"open"}
+  : r.mode==="distance"
   ? {label:wktRowLabel(r), durationType:"distance", meters:(parseFloat(r.value)||0)*1000}
   : r.mode==="meters"
     ? {label:wktRowLabel(r), durationType:"distance", meters:parseFloat(r.value)||0}
@@ -392,7 +397,7 @@ const wktGroups = (rows, pattern) => {
 const expandWktRows = (rows, pattern="alternate") => {
   const steps=[];
   wktGroups(rows, pattern).forEach(group=>{
-    const pools = group.map(r=>({...r, remaining:parseInt(r.reps)||0}));
+    const pools = group.map(r=>({...r, remaining:wktRowReps(r)}));
     let progress=true;
     while(progress){
       progress=false;
@@ -413,7 +418,9 @@ const wktRowsSummary = part => {
   const totalKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
   // A Rec row also attaches to the preceding step with " / " instead of " → ".
   const isRec = wktIsRec;
-  const label = r=>parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+(wktRowLabel(r)?" "+wktRowLabel(r):"");
+  const label = r=>r.mode==="lap"
+    ? (wktRowReps(r)>1?wktRowReps(r)+"×":"")+(wktRowLabel(r)||"open")+" (Lap)"
+    : parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+(wktRowLabel(r)?" "+wktRowLabel(r):"");
   const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?totalKm.toFixed(1)+" km":null].filter(Boolean).join(" + ");
   const body = groups.map((g,i)=>(i===0?"":isRec(g[0])?" / ":" → ")+g.map(label).join(" / ")).join("");
   return body+(totals?" · "+totals+" total":"");
@@ -580,7 +587,7 @@ const WktRows = ({part, onChange}) => {
       }},label))
     ),
     h("div",{style:{fontSize:10,color:"var(--text-muted)",marginBottom:8}},WKT_PATTERN_HINTS[pattern]),
-    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:4,alignItems:"center"}},
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 55px 112px 55px 20px",gap:5,marginBottom:4,alignItems:"center"}},
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Label"),
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Value"),
       h("div",{style:{fontSize:10,color:"var(--text-muted)",fontWeight:600}},"Unit"),
@@ -592,14 +599,19 @@ const WktRows = ({part, onChange}) => {
         h("input",{type:"checkbox",checked:!!row.mix,onChange:e=>update(i,"mix",e.target.checked)}),
         "⇄ Alternate with row above"
       ),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 55px 85px 55px 20px",gap:5,marginBottom:5,alignItems:"center"}},
-      h("input",{value:row.label||"",onChange:e=>update(i,"label",e.target.value),placeholder:i%2===0?defLabelA:defLabelB,style:{padding:"4px 6px",fontSize:12}}),
-      row.mode===distMode
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 55px 112px 55px 20px",gap:5,marginBottom:5,alignItems:"center"}},
+      h("input",{value:row.label||"",onChange:e=>update(i,"label",e.target.value),placeholder:row.mode==="lap"?"e.g. to 6.0k total":i%2===0?defLabelA:defLabelB,style:{padding:"4px 6px",fontSize:12}}),
+      row.mode==="lap"
+        ? h("div",{title:"Lasts until the athlete presses Lap",style:{fontSize:11,color:"var(--text-muted)",textAlign:"center"}},"press Lap")
+      : row.mode===distMode
         ? h("input",{type:"number",value:row.value||"",onChange:e=>update(i,"value",e.target.value),placeholder:distMode==="meters"?"1000":"1.5",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}})
         : h("input",{type:"text",inputMode:"decimal",value:row.value||"",onChange:e=>update(i,"value",e.target.value.replace(/[^0-9:.]/g,"")),placeholder:"6 or 1:30",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)"}},
-        h("button",{onClick:()=>update(i,"mode","time"),style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:row.mode!==distMode?"var(--accent)":"var(--surface)",color:row.mode!==distMode?"var(--accent-text)":"var(--text-muted)"}},"min"),
-        h("button",{onClick:()=>update(i,"mode",distMode),style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:row.mode===distMode?"var(--accent)":"var(--surface)",color:row.mode===distMode?"var(--accent-text)":"var(--text-muted)"}},distUnit)
+        [["time","min"],[distMode,distUnit],["lap","Lap"]].map(([m,lbl])=>{
+          const on = m==="time" ? (row.mode!==distMode&&row.mode!=="lap") : row.mode===m;
+          return h("button",{key:m,onClick:()=>update(i,"mode",m),title:m==="lap"?"Open step: lasts until the athlete presses Lap":undefined,
+            style:{flex:1,padding:"3px 0",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:on?"var(--accent)":"var(--surface)",color:on?"var(--accent-text)":"var(--text-muted)"}},lbl);
+        })
       ),
       h("input",{type:"number",value:row.reps||"",onChange:e=>update(i,"reps",e.target.value),placeholder:"1",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
       rows.length>1?h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:14,lineHeight:1,padding:0}},"×"):h("div")
