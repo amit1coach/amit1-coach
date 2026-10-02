@@ -495,12 +495,16 @@ const WeekStrip = ({plan={},reports={},compact=false}) =>
   );
 
 // ── Part Editor ───────────────────────────────────────────────────────────────
-// A row's own contribution to total km: the reps' distance, plus rest distance when the
-// rest is measured in meters (a timed rest doesn't add ground covered).
+// A hill row's km: every rep up plus the recovery after it. The recovery's distance is the rest in
+// meters when the rest is written in meters; otherwise the jog back down — the same distance as the
+// rep (the default, jogBack not false) — or, with jog back switched off, the coach's estimate
+// (estRestM, meters per rest; 0 if left blank). Plan totals, the athlete's report and summaries all use this.
+const hillRestM = r => r.restUnit==="m" ? parseFloat(r.restVal)||0
+  : r.jogBack===false ? parseFloat(r.estRestM)||0
+  : parseFloat(r.distM)||0;
 const hillRowKm = r => {
   const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-  const restM = r.restUnit==="m" ? parseFloat(r.restVal)||0 : 0;
-  return sets*reps*(dist+restM)/1000;
+  return sets*reps*(dist+hillRestM(r))/1000;
 };
 const HillPlanRows = ({part, onChange}) => {
   const rows = getHillRows(part).length > 0 ? getHillRows(part) : [{sets:"",reps:"",distM:"",restVal:"",restUnit:"min"}];
@@ -521,7 +525,7 @@ const HillPlanRows = ({part, onChange}) => {
     ),
     rows.map((row,i)=>{
       const rowKm=hillRowKm(row);
-      return h("div",{key:i,style:{display:"grid",gridTemplateColumns:cols,gap:5,marginBottom:5,alignItems:"center"}},
+      return h(Fragment,{key:i},h("div",{style:{display:"grid",gridTemplateColumns:cols,gap:5,marginBottom:5,alignItems:"center"}},
         h("input",{type:"number",value:row.sets,onChange:e=>update(i,"sets",e.target.value),placeholder:"2",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
         h("input",{type:"number",value:row.reps,onChange:e=>update(i,"reps",e.target.value),placeholder:"4",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
         h("input",{type:"number",value:row.distM,onChange:e=>update(i,"distM",e.target.value),placeholder:"120",style:{padding:"4px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
@@ -536,9 +540,19 @@ const HillPlanRows = ({part, onChange}) => {
         ),
         h("div",{style:{fontSize:11,color:"var(--text)",fontFamily:"monospace",paddingLeft:4}}, rowKm>0?rowKm.toFixed(3)+" km":"—"),
         rows.length>1?h("button",{onClick:()=>removeRow(i),style:{border:"none",background:"none",cursor:"pointer",color:"var(--danger)",fontSize:14,lineHeight:1,padding:0}},"×"):h("div")
-      );
+      ),
+      row.restUnit!=="m"&&h("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",fontSize:10,color:"var(--text-muted)",margin:"-2px 0 6px 4px"}},
+        h("label",{style:{display:"flex",alignItems:"center",gap:4,cursor:"pointer"}},
+          h("input",{type:"checkbox",checked:row.jogBack!==false,onChange:e=>update(i,"jogBack",e.target.checked)}),
+          "Jog back = rep distance"),
+        row.jogBack===false&&h(Fragment,null,
+          "· ≈",
+          h("input",{type:"number",value:row.estRestM||"",onChange:e=>update(i,"estRestM",e.target.value),placeholder:"–",
+            style:{width:56,padding:"2px 5px",fontSize:11,fontFamily:"'DM Mono',monospace"}}),
+          "m per rest (estimate)")
+      ));
     }),
-    h("div",{style:{fontSize:10,color:"var(--text-muted)",margin:"2px 0 6px"}},"Rest is the recovery between reps (e.g. jog back down) — leave blank for none. It's inserted between reps in the Garmin export too."),
+    h("div",{style:{fontSize:10,color:"var(--text-muted)",margin:"2px 0 6px"}},"Rest is the recovery between reps — leave blank for none; it's inserted between reps in the Garmin export too. The km count each rep's way back down unless you untick it (then give an estimate) or write the rest in meters."),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
       h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
       totalKm>0&&h("span",{style:{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}},"Total: "+totalKm.toFixed(3)+" km")
@@ -1141,10 +1155,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
       const nr=[...rows]; nr[i]={...nr[i],[k]:v};
       setRows(nr);
       s("hillRows",nr);
-      const totalKm=nr.reduce((t,r)=>{
-        const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-        return t+(sets*reps*dist/1000);
-      },0);
+      const totalKm=nr.reduce((t,r)=>t+hillRowKm(r),0);
       s("actualDistance",totalKm.toFixed(3));
     };
     const addRow = () => { const nr=[...rows,{sets:"",reps:"",distM:""}]; setRows(nr); s("hillRows",nr); };
@@ -1152,16 +1163,10 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
       const nr=rows.filter((_,idx)=>idx!==i);
       setRows(nr);
       s("hillRows",nr);
-      const totalKm=nr.reduce((t,r)=>{
-        const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-        return t+(sets*reps*dist/1000);
-      },0);
+      const totalKm=nr.reduce((t,r)=>t+hillRowKm(r),0);
       s("actualDistance",totalKm.toFixed(3));
     };
-    const totalHillKm=rows.reduce((t,r)=>{
-      const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-      return t+(sets*reps*dist/1000);
-    },0);
+    const totalHillKm=rows.reduce((t,r)=>t+hillRowKm(r),0);
     // Averages recompute live from whatever rows remain — e.g. after deleting recovery-jog rows.
     const timedRows = rows.filter(r=>parseMmss(r.avgTime)>0 && (parseFloat(r.distM)||0)>0);
     const repCount = timedRows.reduce((t,r)=>t+(parseFloat(r.sets)||1)*(parseFloat(r.reps)||1),0);
@@ -1182,8 +1187,8 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
         h("div")
       ),
       rows.map((row,i)=>{
-        const sets=parseFloat(row.sets)||1, reps=parseFloat(row.reps)||0, dist=parseFloat(row.distM)||0;
-        const rowKm=(sets*reps*dist/1000);
+        const dist=parseFloat(row.distM)||0;
+        const rowKm=hillRowKm(row);
         const rowTimeSec=parseMmss(row.avgTime);
         const rowPace = (rowTimeSec>0 && dist>0) ? formatPaceFromSecPerKm(rowTimeSec/(dist/1000)) : "";
         return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"64px 64px 70px 70px 1fr 24px",gap:6,marginBottom:6,alignItems:"center"}},
@@ -1206,6 +1211,7 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
           "Total hill distance: ",h("span",{className:"mono"},totalHillKm.toFixed(3)," km")
         )
       ),
+      h("div",{style:{fontSize:10,color:"var(--text-muted)",marginTop:4}},"km include the way back down after each rep (or your coach's rest distance), the same as in the plan."),
       avgRepTimeSec>0&&h("div",{style:{marginTop:8,padding:"8px 10px",background:"var(--info-bg)",borderRadius:6,border:"0.5px solid var(--border-strong)",fontSize:12,color:"var(--info-text)"}},
         "Avg per rep (",repCount," rep"+(repCount!==1?"s":""),"): ",
         h("strong",null,formatHms(avgRepTimeSec,1)),
@@ -1792,7 +1798,7 @@ const repSummary = (rep, parts) => {
         if (hillRows.length>0) {
           const rowDetails = hillRows.map(r=>{
             const sets=parseFloat(r.sets)||1, reps=parseFloat(r.reps)||0, dist=parseFloat(r.distM)||0;
-            const km=(sets*reps*dist/1000);
+            const km=hillRowKm(r);
             return `${sets}×${reps}×${dist}m = ${km.toFixed(3)}km`+(r.avgTime?` @ ${r.avgTime}`:"")+(r.hr?` (${r.hr} bpm)`:"");
           }).join(" | ");
           detail = rowDetails;
