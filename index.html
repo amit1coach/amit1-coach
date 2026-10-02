@@ -238,7 +238,10 @@ const ccColor  = p => p===null?{bg:"var(--neutral-bg)",color:"var(--text-muted)"
 const newPart  = (type="easy") => ({type,mode:"distance",distance:"",duration:"",pace:"",notes:"",_showPace:false,_showKm:false});
 const newSess  = () => ({parts:[newPart()],wu:"",cd:""});
 const newDay   = (rest=false,sessions=null) => ({restDay:rest,sessions:sessions||[newSess()]});
-const sessTotalKm = s => (parseFloat(s?.wu)||0) + (s?.parts||[]).reduce((t,p)=>t+(parseFloat(p.distance)||0),0) + (parseFloat(s?.cd)||0);
+// A part's planned km. Hill parts are always worked out from their rows (hillRowKm), so a plan saved
+// before a change to that calculation still shows the current total without being re-edited.
+const partKm = p => p?.type==="hills" && getHillRows(p).length ? getHillRows(p).reduce((t,r)=>t+hillRowKm(r),0) : (parseFloat(p?.distance)||0);
+const sessTotalKm = s => (parseFloat(s?.wu)||0) + (s?.parts||[]).reduce((t,p)=>t+partKm(p),0) + (parseFloat(s?.cd)||0);
 const dayTotalKm  = d => (d?.sessions||[]).reduce((t,s)=>t+sessTotalKm(s),0);
 const dayIsRest   = d => !d||d.restDay||(d.sessions||[]).length===0;
 const sessFirstType = s => s.parts&&s.parts.length>0?s.parts[0].type:"easy";
@@ -322,7 +325,7 @@ const hillRowsSummary = part => {
     const restMin=hillRestMin(r), restM=r.restUnit==="m"?parseFloat(r.restVal)||0:0;
     const rest = restMin>0 ? " +"+fmtMin(restMin)+"min rest" : restM>0 ? " +"+restM+"m rest" : "";
     return (sets>1?sets+"×":"")+reps+"×"+dist+"m"+rest;
-  }).join(" + ")+" · "+parseFloat(part.distance||0).toFixed(3)+" km";
+  }).join(" + ")+" · "+partKm(part).toFixed(3)+" km";
 };
 // Expands hill rows into individual workout_step-shaped entries for the Garmin export: each
 // rep is its own distance step, with an optional rest step (time or distance) between reps —
@@ -1151,21 +1154,19 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
     const planHillRows = planPart ? getHillRows(planPart) : [];
     const initRows = getHillRows(f).length > 0 ? getHillRows(f) : (planHillRows.length > 0 ? planHillRows : [{sets:"",reps:"",distM:""}]);
     const [rows, setRows] = useState(initRows);
-    const updateRow = (i,k,v) => {
-      const nr=[...rows]; nr[i]={...nr[i],[k]:v};
+    // Rows and their total are saved in one update; the total always follows the rows
+    const setRowsAndTotal = nr => {
       setRows(nr);
-      s("hillRows",nr);
-      const totalKm=nr.reduce((t,r)=>t+hillRowKm(r),0);
-      s("actualDistance",totalKm.toFixed(3));
+      const nx = {...f, hillRows:nr, actualDistance:nr.reduce((t,r)=>t+hillRowKm(r),0).toFixed(3)};
+      setF(nx); onChange(nx);
     };
-    const addRow = () => { const nr=[...rows,{sets:"",reps:"",distM:""}]; setRows(nr); s("hillRows",nr); };
-    const removeRow = i => {
-      const nr=rows.filter((_,idx)=>idx!==i);
-      setRows(nr);
-      s("hillRows",nr);
-      const totalKm=nr.reduce((t,r)=>t+hillRowKm(r),0);
-      s("actualDistance",totalKm.toFixed(3));
-    };
+    useEffect(()=>{
+      const t = rows.reduce((t,r)=>t+hillRowKm(r),0);
+      if (t>0 && Math.abs(t-(parseFloat(f.actualDistance)||0))>0.0005) setRowsAndTotal(rows);
+    },[]);
+    const updateRow = (i,k,v) => { const nr=[...rows]; nr[i]={...nr[i],[k]:v}; setRowsAndTotal(nr); };
+    const addRow = () => setRowsAndTotal([...rows,{sets:"",reps:"",distM:""}]);
+    const removeRow = i => setRowsAndTotal(rows.filter((_,idx)=>idx!==i));
     const totalHillKm=rows.reduce((t,r)=>t+hillRowKm(r),0);
     // Averages recompute live from whatever rows remain — e.g. after deleting recovery-jog rows.
     const timedRows = rows.filter(r=>parseMmss(r.avgTime)>0 && (parseFloat(r.distM)||0)>0);
@@ -1246,12 +1247,13 @@ const TypedRepFields = ({type, existing, onChange, planPart}) => {
 
 const PartRepForm = ({part, index, total, existing, onChange}) => {
   const wt = WT[part.type]||WT.easy;
-  const [typeData, setTypeData] = useState(existing?.typeData||{actualDistance:part.distance||""});
-  const emit = (td) => onChange({...existing, typeData:td, actualDistance:td.actualDistance||part.distance||""});
+  const planKm = partKm(part) ? String(Math.round(partKm(part)*1000)/1000) : "";
+  const [typeData, setTypeData] = useState(existing?.typeData||{actualDistance:planKm});
+  const emit = (td) => onChange({...existing, typeData:td, actualDistance:td.actualDistance||planKm});
 
   return h("div",{style:{padding:"8px 10px", marginBottom:6, borderRadius:6, background:"var(--surface)", borderLeft:`3px solid ${wt.color}`, border:`0.5px solid ${wt.color}33`, borderLeft:`3px solid ${wt.color}`}},
     h("div",{style:{fontSize:11, fontWeight:700, color:wt.dark, marginBottom:6}},
-      (total>1?"Part "+(index+1)+": ":"")+wt.label+(part.mode==="time"?(part.duration?" · Planned: "+part.duration+" min":""):(part.distance?" · Planned: "+part.distance+"km":""))
+      (total>1?"Part "+(index+1)+": ":"")+wt.label+(part.mode==="time"?(part.duration?" · Planned: "+part.duration+" min":""):(planKm?" · Planned: "+planKm+"km":""))
     ),
     h(TypedRepFields,{type:part.type, existing:typeData, planPart:part, onChange:td=>{ setTypeData(td); emit(td); }})
   );
@@ -1377,7 +1379,7 @@ const SessRepForm = ({session, existing, onChange, showMissing}) => {
     const pr = parts.map((p,i) => existing?.partReps?.[i]||null);
     groups.forEach(g=>{
       const plan = mergedPlanPart(parts,g);
-      if (g.length===1) { if(!pr[g[0]]) pr[g[0]]={typeData:{actualDistance:plan.distance||""}}; return; }
+      if (g.length===1) { if(!pr[g[0]]) pr[g[0]]={typeData:{actualDistance:partKm(plan)?String(Math.round(partKm(plan)*1000)/1000):""}}; return; }
       const td = g.some(i=>pr[i]) ? mergeGroupTypeData(pr, g) : {actualDistance:plan.distance||""};
       g.forEach((i,k)=>{ pr[i] = k===0 ? {...(pr[i]||{}), typeData:td, actualDistance:td.actualDistance||""} : blankRep; });
     });
@@ -1733,7 +1735,7 @@ const partGroups = parts => {
 };
 const mergedPlanPart = (parts, idxs) => idxs.length===1 ? parts[idxs[0]] : {
   ...parts[idxs[0]], mode:"distance", pace:"", notes:"",
-  distance: String(Math.round(idxs.reduce((a,i)=>a+(parseFloat(parts[i].distance)||0),0)*100)/100),
+  distance: String(Math.round(idxs.reduce((a,i)=>a+partKm(parts[i]),0)*100)/100),
 };
 const groupItems = (partReps, idxs) => idxs.map(i=>{ const pr=partReps?.[i];
   return {td:pr?.typeData||{}, km:parseFloat(pr?.actualDistance||pr?.typeData?.actualDistance)||0}; });
