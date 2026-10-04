@@ -431,9 +431,15 @@ const wktRowsSummary = part => {
   // A Rec row also attaches to the preceding step with " / " instead of " → ".
   const isRec = wktIsRec;
   const estStr = r => wktRowEstKm(r)>0 ? " ≈"+wktRowEstKm(r)+"km" : "";
+  // On screen, "1×" and the default "Work" label add nothing ("16km", not "1×16km Work")
+  const shownLabel = r => wktRowLabel(r).toLowerCase()==="work" ? "" : wktRowLabel(r);
+  const repsStr = r => wktRowReps(r)>1 ? wktRowReps(r)+"×" : "";
   const label = r=>(r.mode==="lap"
-    ? (wktRowReps(r)>1?wktRowReps(r)+"×":"")+(wktRowLabel(r)||"open")+" (Lap)"
-    : parseInt(r.reps)+"×"+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+(wktRowLabel(r)?" "+wktRowLabel(r):""))+estStr(r);
+    ? repsStr(r)+(shownLabel(r)||"open")+" (Lap)"
+    : repsStr(r)+(r.mode==="time"?fmtMin(parseMin(r.value))+"min":parseFloat(r.value)+(r.mode==="meters"?"m":"km"))+(shownLabel(r)?" "+shownLabel(r):""))+estStr(r);
+  // A single one-off step needs no totals line: it is the total
+  const valid = wktValidRows(getWktRows(part));
+  if (valid.length===1 && wktRowReps(valid[0])===1) return label(valid[0]);
   const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?(est?"≈":"")+totalKm.toFixed(1)+" km":null].filter(Boolean).join(" · ");
   const body = groups.map((g,i)=>(i===0?"":isRec(g[0])?" / ":" → ")+g.map(label).join(" / ")).join("");
   return body+(totals?" · "+totals+" total":"");
@@ -1820,6 +1826,88 @@ const repSummary = (rep, parts) => {
   return lines;
 };
 
+const GARMIN_EXPORT_TIP = "Connect your watch by USB and copy this file into the Garmin/NewFiles folder — it'll show up as a workout next sync. (Garmin Connect's website can't import workout files, only activities.)";
+const exportSessionFit = (sess, si, nSessions, day, weekOff, athleteName) => {
+  const wkName=day+" "+(WT[sessFirstType(sess)]?.label||"Workout")+(nSessions>1?" S"+(si+1):"");
+  const file=slugify(athleteName)+"_"+dayDateStr(weekOff,day)+"_"+day.toLowerCase()+(nSessions>1?"-session"+(si+1):"")+".fit";
+  downloadFitWorkout(file, encodeFitWorkout(wkName, sessionToFitSteps(sess)));
+};
+
+// One line per planned part, as the athlete reads it: the rows summary, else time/distance, plus pace
+const partPlanText = part => {
+  const main = part.type==="hills" ? hillRowsSummary(part)
+    : wktRowsSummary(part) || (part.mode==="time"
+        ? (part.duration ? part.duration+" min"+(part.distance?" · ~"+part.distance+" km":"") : "")
+        : (parseFloat(part.distance)>0 ? fmtKm(parseFloat(part.distance))+" km" : ""));
+  const pace = part.type!=="hills" && part.pace && part._showPace!==false ? "@ "+part.pace+"/km" : "";
+  return [main, pace].filter(Boolean).join(" ");
+};
+
+// ── Today card (athlete home) ────────────────────────────────────────────────
+// Today's workout, big and first, with Report right on it. Uses the current week's plan and reports.
+const TodayCard = ({plan, reports, athleteName, onReport}) => {
+  const [open, setOpen] = useState(false);
+  const day = todayShort(), d = plan[day], r = reports[day];
+  const hasPlan = Object.keys(plan||{}).length>0;
+  const isRest = dayIsRest(d);
+  const sessions = isRest ? [] : d.sessions||[];
+  const wt = isRest ? WT.rest : (WT[sessFirstType(sessions[0])]||WT.easy);
+  const reported = isRest ? !!(r?.sleep||r?.stress) : !!r?.sessions;
+  const dateStr = new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
+  const save = rep => { onReport(day, rep); setOpen(false); };
+
+  return h("div",{style:{background:"var(--surface)",border:"0.5px solid var(--border)",borderTop:`4px solid ${wt.color}`,borderRadius:12,
+      padding:"14px 16px",marginBottom:"1.25rem",boxShadow:"0 2px 12px var(--shadow-card)"}},
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}},
+      h("div",null,
+        h("div",{style:{fontSize:11,fontWeight:700,color:wt.dark,letterSpacing:"0.1em",textTransform:"uppercase"}},"Today"),
+        h("div",{style:{fontSize:13,color:"var(--text-muted2)"}},dateStr)
+      ),
+      reported&&h("span",{className:"stb",style:{background:"var(--success-bg)",color:"var(--success-text)",fontSize:12}},"✓ Reported")
+    ),
+    !hasPlan
+      ? h("div",{style:{fontSize:15,color:"var(--text-muted)",padding:"4px 0 2px"}},"No plan for this week yet — check back soon.")
+    : isRest
+      ? h("div",null,
+          h("div",{style:{fontSize:22,fontWeight:700,marginBottom:4}},"Rest day 😴"),
+          h("div",{style:{fontSize:13,color:"var(--text-muted2)"}},"Recover well. Just log how you slept and how stressed you feel.")
+        )
+      : sessions.map((sess,si)=>{
+          const parts = sess.parts||[];
+          const pg = partGroups(parts);
+          const km = sessTotalKm(sess);
+          const rep = r?.sessions?.[si];
+          return h("div",{key:si,style:{paddingTop:si?12:0,marginTop:si?12:0,borderTop:si?"0.5px dashed var(--border)":"none"}},
+            sessions.length>1&&h("div",{style:{fontSize:11,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}},"Session "+(si+1)),
+            parts.map((part,pi)=>{
+              const pwt = WT[part.type]||WT.easy;
+              const groupStart = pg.find(g=>g.includes(pi))?.[0]===pi;
+              const text = partPlanText(part);
+              return h("div",{key:pi,style:{marginBottom:8}},
+                groupStart&&h("span",{className:"wtb",style:{background:pwt.bg,color:pwt.dark,fontSize:13,padding:"3px 10px",marginBottom:4}},pwt.label),
+                text&&h("div",{style:{fontSize:16,fontWeight:600,color:"var(--text)",lineHeight:1.4}},text),
+                part.notes&&h("div",{style:{fontSize:13,color:"var(--text-muted2)",marginTop:2}},part.notes)
+              );
+            }),
+            (km>0||sess.wu||sess.cd)&&h("div",{style:{fontSize:13,color:"var(--text-muted2)",marginTop:4}},
+              km>0&&h("strong",{className:"mono",style:{color:"var(--text)"}},"Total "+km.toFixed(1)+" km"),
+              (sess.wu||sess.cd)&&h("span",null,(km>0?" · incl. ":"")+[sess.wu&&"warm-up "+sess.wu+" km",sess.cd&&"cool-down "+sess.cd+" km"].filter(Boolean).join(", "))
+            ),
+            rep?.status&&h("div",{style:{fontSize:13,fontWeight:700,marginTop:6,color:SS[rep.status]?.color}},SS[rep.status]?.label),
+            h("button",{className:"btn btns",style:{marginTop:8,fontSize:12},title:GARMIN_EXPORT_TIP,onClick:()=>exportSessionFit(sess,si,sessions.length,day,0,athleteName)},"⌚  Export to Garmin (.fit)")
+          );
+        }),
+    hasPlan&&h("button",{className:reported?"btn":"btnp",onClick:()=>setOpen(true),
+        style:{width:"100%",justifyContent:"center",marginTop:14,padding:"11px 16px",fontSize:15,fontWeight:600}},
+      isRest ? (reported?"Edit sleep & stress":"😴 Log sleep & stress") : (reported?"Edit today's report":"Report today's training")),
+    open&&h(Modal,{title:(isRest?"Rest day — ":"Report — ")+day,onClose:()=>setOpen(false),wide:true},
+      isRest
+        ? h(RestDayForm,{day,existingReport:r,onCancel:()=>setOpen(false),onSave:save})
+        : h(ReportForm,{day,daySessions:sessions,existingReport:r,onCancel:()=>setOpen(false),onSave:save})
+    )
+  );
+};
+
 const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin,athleteName}) => {
   const [editPlan,setEditPlan]=useState(false);
   const [repDay,setRepDay]=useState(null);
@@ -1877,11 +1965,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                       );
                     }),
                     sessions.length===1&&dailyKm>0&&h("div",{style:{fontSize:11,color:"var(--text-muted)",marginTop:4}},"Total KMs: ",h("strong",{className:"mono"},dailyKm.toFixed(1)+" km")),
-                    h("button",{className:"btn btns",style:{marginTop:6,fontSize:11},title:"Connect your watch by USB and copy this file into the Garmin/NewFiles folder — it'll show up as a workout next sync. (Garmin Connect's website can't import workout files, only activities.)",onClick:()=>{
-                      const wkName=day+" "+(WT[sessFirstType(sess)]?.label||"Workout")+(sessions.length>1?" S"+(si+1):"");
-                      const file=slugify(athleteName)+"_"+dayDateStr(weekOff,day)+"_"+day.toLowerCase()+(sessions.length>1?"-session"+(si+1):"")+".fit";
-                      downloadFitWorkout(file, encodeFitWorkout(wkName, sessionToFitSteps(sess)));
-                    }},"⌚  Export to Garmin (.fit)"),
+                    h("button",{className:"btn btns",style:{marginTop:6,fontSize:11},title:GARMIN_EXPORT_TIP,onClick:()=>exportSessionFit(sess,si,sessions.length,day,weekOff,athleteName)},"⌚  Export to Garmin (.fit)"),
                     rep&&h("div",{style:{marginTop:6,paddingTop:6,borderTop:"0.5px solid var(--neutral-bg)"}},
                       h("span",{style:{fontWeight:700,fontSize:12,color:SS[rep.status]?.color}},SS[rep.status]?.label),
                       (repSummary(rep,parts)||[]).map((l,li)=>l.pace&&h("div",{key:li,style:{fontSize:11,marginTop:3}},
@@ -2818,7 +2902,6 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
       h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
     ),
-    h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:true}),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"4px 8px",borderBottom:"0.5px solid var(--border)",marginBottom:14}},
       h("div",{style:{display:"flex"}},
         h("button",{className:"tabb"+(tab==="plan"?" act":""),onClick:()=>setTab("plan")},"Training plan"),
@@ -2831,7 +2914,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
         h(DriveButton,{onClick:onDriveClick}),
         tab!=="progress"&&h(Fragment,null,
           h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w-1)},"‹"),
-          h("span",{style:{fontSize:12,color:"var(--text-muted2)",minWidth:100,textAlign:"center",fontWeight:500}},weekLabel(weekOff)),
+          h("span",{style:{fontSize:15,color:"var(--text)",minWidth:110,textAlign:"center",fontWeight:700}},weekLabel(weekOff)),
           h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w+1)},"›")
         )
       )
@@ -2839,6 +2922,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
     tab==="progress"&&h(ProgressView,{athleteId:athlete.id,groupId:athlete.groupId}),
     loading?h(Spinner):null,
     !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:athlete.name}),
+    !loading&&tab==="plan"&&h("div",{style:{marginTop:14}},h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:true})),
     !loading&&tab==="reports"&&h("div",null,
       DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
         const d=plan[day],r=reports[day],sessions=d?.sessions||[];
@@ -3007,12 +3091,11 @@ const AthleteHome = ({user,onSignOut}) => {
       )
     ),
     h(RaceCountdown,{athleteId:user.uid,groupId:profile.groupId}),
+    weekOff===0&&!loading&&h(TodayCard,{plan,reports,athleteName:profile.name,onReport:saveReport}),
     h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
-      h(StatCard,{label:"This week",value:weekLabel(weekOff)}),
       h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
       h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
     ),
-    h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:false,onSave:saveWeight}),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"4px 8px",borderBottom:"0.5px solid var(--border)",marginBottom:14}},
       h("div",{style:{display:"flex"}},
         h("button",{className:"tabb"+(tab==="plan"?" act":""),onClick:()=>setTab("plan")},"My plan"),
@@ -3021,13 +3104,14 @@ const AthleteHome = ({user,onSignOut}) => {
       ),
       tab!=="progress"&&h("div",{style:{display:"flex",alignItems:"center",gap:8,paddingBottom:4}},
         h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w-1)},"‹"),
-        h("span",{style:{fontSize:12,color:"var(--text-muted2)",minWidth:100,textAlign:"center",fontWeight:500}},weekLabel(weekOff)),
+        h("span",{style:{fontSize:15,color:"var(--text)",minWidth:110,textAlign:"center",fontWeight:700}},weekLabel(weekOff)),
         h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w+1)},"›")
       )
     ),
     tab==="progress"&&h(ProgressView,{athleteId:user.uid,groupId:profile.groupId}),
     loading?h(Spinner):null,
     !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:profile.name}),
+    !loading&&tab==="plan"&&h("div",{style:{marginTop:14}},h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:false,onSave:saveWeight})),
     !loading&&tab==="reports"&&h("div",null,
       DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
         const d=plan[day],r=reports[day],sessions=d?.sessions||[];
