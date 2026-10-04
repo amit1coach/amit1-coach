@@ -1909,6 +1909,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
   };
 
   return h(Fragment,null,
+    h(WeeklyCountdown,{weekOff}),
     DAYS.map(day=>renderSessions(day)),
     h(WeekCheckin,{data:reports.weekCheckin,isCoach,onSave:onSaveWeekCheckin}),
     repDay&&h(Modal,{title:(dayIsRest(plan[repDay])?"Rest day — ":"Report — ")+repDay,onClose:()=>setRepDay(null),wide:true},
@@ -2091,6 +2092,102 @@ const loadAthleteWeeks = async (athleteId, groupId, n) => {
     });
   }
   return weeks;
+};
+
+// ── Race countdown ───────────────────────────────────────────────────────────
+// Daily countdown: Race sessions in the plan (own plan, else group plan) in the last week before
+// the race (7 days to go → race day), soonest first. Only written plans count.
+const RACE_COUNTDOWN_DAYS = 7;
+const daysUntil = date => { const t=new Date(); t.setHours(0,0,0,0); return Math.round((date-t)/86400000); };
+const findUpcomingRaces = async (athleteId, groupId) => {
+  const toMap = snap => { const m={}; snap?.docs.forEach(d=>{m[d.id]=d.data();}); return m; };
+  const [plans, gps] = await Promise.all([
+    _db.collection(`plans/${athleteId}/weeks`).get().then(toMap),
+    groupId ? _db.collection(`groupPlans/${groupId}/weeks`).get().then(toMap) : {},
+  ]);
+  const races = [];
+  // This week and next cover every day up to 7 days ahead
+  for (let off = 0; off < 2; off++) {
+    const wk = weekKey(off);
+    const own = pickWeekDoc(plans, wk);
+    const plan = own ? migratePlan(own) : (gps[wk] ? migratePlan(gps[wk]) : {});
+    DAYS.forEach(day=>{
+      const d = plan[day];
+      if (dayIsRest(d)) return;
+      const date = getWeekStart(off); date.setDate(date.getDate()+DAYS_IDX[day]);
+      const n = daysUntil(date);
+      if (n < 0 || n > RACE_COUNTDOWN_DAYS) return;
+      // One countdown entry per day, even if the day has several race parts
+      const p = d.sessions.flatMap(s=>s.parts||[]).find(p=>p.type==="race");
+      if (p) races.push({date, km:partKm(p), notes:(p.notes||"").trim()});
+    });
+  }
+  return races;
+};
+
+// Light purple at 7 days to go, moving step by step to bright green on race day
+const countdownColor = n => {
+  const t = Math.min(1, Math.max(0, (RACE_COUNTDOWN_DAYS - n) / RACE_COUNTDOWN_DAYS));
+  const mix = (a,b) => Math.round(a+(b-a)*t);
+  return `hsl(${mix(270,140)},${mix(75,85)}%,${mix(82,45)}%)`;
+};
+
+const RaceCountdown = ({athleteId, groupId, refresh}) => {
+  const [races, setRaces] = useState(null);
+  useEffect(()=>{
+    findUpcomingRaces(athleteId, groupId).then(setRaces).catch(e=>{ console.error("Race countdown:", e); setRaces([]); });
+  }, [athleteId, groupId, refresh]);
+  if (!races || !races.length) return null;
+  const next = races[0];
+  const n = daysUntil(next.date);
+  const c = countdownColor(n);
+  const when = next.date.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+  const title = (next.km>0 ? fmtKm(next.km)+" km race" : "Race")+" · "+when;
+  const msg = n===0 ? "Race day — good luck!" : n===1 ? "Tomorrow!" : `Race week! ${n} days to go`;
+  const more = races.length-1;
+  return h("div",{style:{display:"flex",alignItems:"center",gap:14,marginBottom:"1.25rem",padding:"12px 16px",borderRadius:12,
+      background:"var(--surface)",border:"0.5px solid var(--border)",borderLeft:`5px solid ${c}`}},
+    h("div",{style:{width:58,height:58,borderRadius:"50%",background:c,color:"#0F1117",flexShrink:0,
+        display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",transition:"background .3s"}},
+      n===0 ? h("div",{style:{fontSize:26,lineHeight:1}},"🏁")
+        : h(Fragment,null,
+            h("div",{className:"mono",style:{fontSize:24,fontWeight:700,lineHeight:1}},n),
+            h("div",{style:{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:2}},n===1?"day":"days"))
+    ),
+    h("div",{style:{flex:1,minWidth:0}},
+      h("div",{style:{fontSize:12,fontWeight:600,color:"var(--text-muted2)",marginBottom:2}},"🏁 "+title),
+      h("div",{style:{fontSize:20,fontWeight:700,color:"var(--text)"}},msg),
+      next.notes&&h("div",{title:next.notes,style:{fontSize:12,color:"var(--text-muted2)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},next.notes),
+      more>0&&h("div",{style:{fontSize:11,color:"var(--text-muted)",marginTop:3}},"+"+more+" more race"+(more>1?"s":"")+" this week")
+    )
+  );
+};
+
+// Weekly countdown: Season-calendar events the coach marked "⏳ weekly countdown". Each week of the
+// plan shows how many weeks are left to the nearest marked event still ahead of that week.
+let seasonEventsCache = null;
+const loadSeasonEvents = () => seasonEventsCache || (seasonEventsCache = dbList("seasonEvents").catch(e=>{ seasonEventsCache=null; throw e; }));
+const WeeklyCountdown = ({weekOff}) => {
+  const [events, setEvents] = useState([]);
+  useEffect(()=>{ loadSeasonEvents().then(setEvents).catch(e=>console.error("Season events:", e)); }, []);
+  const viewStart = getWeekStart(weekOff);
+  const upcoming = events.filter(ev=>ev.countdown&&(ev.dateStart||ev.date)).map(ev=>{
+    const date = new Date((ev.dateStart||ev.date)+"T00:00:00");
+    const evWeekStart = new Date(date); evWeekStart.setDate(date.getDate()-date.getDay());
+    return {ev, date, weeks:Math.round((evWeekStart-viewStart)/(7*86400000))};
+  }).filter(x=>x.weeks>=0).sort((a,b)=>a.date-b.date);
+  if (!upcoming.length) return null;
+  const {ev, date, weeks} = upcoming[0];
+  const et = EVENT_TYPES[ev.type]||EVENT_TYPES.other;
+  const when = date.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+  return h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"8px 12px",borderRadius:8,
+      background:et.bg,border:`0.5px solid ${et.color}44`,borderLeft:`3px solid ${et.color}`}},
+    h("div",{className:"mono",style:{fontSize:20,fontWeight:700,color:et.color,minWidth:28,textAlign:"center"}},weeks===0?et.emoji:weeks),
+    h("div",{style:{flex:1,minWidth:0,fontSize:13}},
+      h("strong",null,weeks===0?"Race week":weeks===1?"1 week to go":weeks+" weeks to go"),
+      h("span",{style:{color:"var(--text-muted2)"}}," · "+ev.name+" · "+when)
+    )
+  );
 };
 
 const toKmWeeks = rawWeeks =>
@@ -2715,6 +2812,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       ),
       h("button",{className:"btn btns",onClick:()=>setEditAth(true),style:{flexShrink:0}},"Edit profile")
     ),
+    h(RaceCountdown,{athleteId:athlete.id,groupId:athlete.groupId,refresh:plan}),
     h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
       h(StatCard,{label:"Weekly volume",value:totalKm?Math.round(totalKm)+" km":"–"}),
       h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
@@ -2908,6 +3006,7 @@ const AthleteHome = ({user,onSignOut}) => {
         h("button",{className:"btn btns",onClick:onSignOut},"Sign out")
       )
     ),
+    h(RaceCountdown,{athleteId:user.uid,groupId:profile.groupId}),
     h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
       h(StatCard,{label:"This week",value:weekLabel(weekOff)}),
       h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
@@ -3063,7 +3162,7 @@ const SeasonCalendar = ({onClose, isCoach}) => {
   const [loading, setLoading] = useState(true);
   const [addingEvent, setAddingEvent] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
-  const [form, setForm] = useState({name:"", type:"race", dateStart:"", dateEnd:"", location:"", mandatory:true, notes:""});
+  const [form, setForm] = useState({name:"", type:"race", dateStart:"", dateEnd:"", location:"", mandatory:true, countdown:false, notes:""});
   const [toast, setToast] = useState(null);
   const showToast = useCallback((msg,ok=true)=>{ setToast({msg,ok}); setTimeout(()=>setToast(null),2000); },[]);
 
@@ -3077,29 +3176,31 @@ const SeasonCalendar = ({onClose, isCoach}) => {
     const dateEnd = form.dateEnd && form.dateEnd >= form.dateStart ? form.dateEnd : form.dateStart;
     const ev = { id, ...form, dateEnd };
     await dbSet(`seasonEvents/${id}`, ev);
+    seasonEventsCache = null;
     setEvents(prev => editingEvent ? prev.map(e=>e.id===id?ev:e) : [...prev, ev]);
     setAddingEvent(null); setEditingEvent(null);
-    setForm({name:"", type:"race", dateStart:"", dateEnd:"", location:"", mandatory:true, notes:""});
+    setForm({name:"", type:"race", dateStart:"", dateEnd:"", location:"", mandatory:true, countdown:false, notes:""});
     showToast("Event saved");
   };
 
   const deleteEvent = async (id) => {
     if (!window.confirm("Delete this event?")) return;
     await dbDel(`seasonEvents/${id}`);
+    seasonEventsCache = null;
     setEvents(prev => prev.filter(e=>e.id!==id));
     showToast("Event deleted");
   };
 
   const openAdd = (dateStr) => {
     if (!isCoach) return;
-    setForm({name:"", type:"race", dateStart:dateStr, dateEnd:dateStr, location:"", mandatory:true, notes:""});
+    setForm({name:"", type:"race", dateStart:dateStr, dateEnd:dateStr, location:"", mandatory:true, countdown:false, notes:""});
     setEditingEvent(null);
     setAddingEvent(dateStr);
   };
 
   const openEdit = (ev) => {
     if (!isCoach) return;
-    setForm({name:ev.name, type:ev.type, dateStart:ev.dateStart||ev.date||"", dateEnd:ev.dateEnd||ev.dateStart||ev.date||"", location:ev.location||"", mandatory:ev.mandatory!==false, notes:ev.notes||""});
+    setForm({name:ev.name, type:ev.type, dateStart:ev.dateStart||ev.date||"", dateEnd:ev.dateEnd||ev.dateStart||ev.date||"", location:ev.location||"", mandatory:ev.mandatory!==false, countdown:!!ev.countdown, notes:ev.notes||""});
     setEditingEvent(ev);
     setAddingEvent(ev.dateStart||ev.date);
   };
@@ -3156,7 +3257,7 @@ const SeasonCalendar = ({onClose, isCoach}) => {
                 borderRadius, lineHeight:1.3,
                 whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"
               }},
-              isStart ? et.emoji+" "+ev.name+(ev.mandatory===false?" (opt)":"") : ""
+              isStart ? et.emoji+" "+ev.name+(ev.mandatory===false?" (opt)":"")+(ev.countdown?" ⏳":"") : ""
             );
           })
         )
@@ -3221,6 +3322,11 @@ const SeasonCalendar = ({onClose, isCoach}) => {
               h("option",{value:"optional"},"Optional")
             )
           )
+        ),
+        h("label",{style:{display:"flex",alignItems:"flex-start",gap:8,marginBottom:12,fontSize:13,cursor:"pointer"}},
+          h("input",{type:"checkbox",checked:!!form.countdown,onChange:e=>setForm(f=>({...f,countdown:e.target.checked})),style:{marginTop:2,accentColor:"var(--accent)"}}),
+          h("span",null,"⏳ Show a weekly countdown in athletes' plans",
+            h("span",{style:{display:"block",fontSize:11,color:"var(--text-muted)"}},"Each week of the plan shows how many weeks are left to this event."))
         ),
         h("div",{style:{marginBottom:12}},
           h("label",{className:"lbl"},"Location"),
