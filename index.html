@@ -1843,9 +1843,119 @@ const partPlanText = part => {
   return [main, pace].filter(Boolean).join(" ");
 };
 
+// ── Coach comments ───────────────────────────────────────────────────────────
+// Stored in comments/{athleteId}/weeks/{wk}, apart from the reports, so an athlete re-saving a report
+// can never wipe a comment. Shape: {threads:{"<Day>_<session index>"|"week":{msgs:[{by,text,at}],
+// reaction:{emoji,at}}}, seen:{coach:ms, athlete:ms}}. Messages are appended with arrayUnion so both
+// sides can post at the same time without overwriting each other.
+const REACTIONS = ["👍","🔥","💪","👏","🚀","🏆"];
+const WEEK_THREAD = "week";
+const sessKey = (day, si) => day+"_"+si;
+const commentRef = (athleteId, wk) => _db.collection(`comments/${athleteId}/weeks`).doc(wk);
+const threadOf = (doc, key) => doc?.threads?.[key] || {};
+const msgsOf = (doc, key) => { const m=threadOf(doc,key).msgs; return Array.isArray(m) ? m : []; };
+// New for this viewer: anything the other side added after the viewer last looked
+const isNewFor = (role, seen) => item => !!item && item.by!==role && item.at>(seen||0);
+const threadHasNew = (doc, key, role, seen) => {
+  const isNew = isNewFor(role, seen), r = threadOf(doc,key).reaction;
+  return msgsOf(doc,key).some(isNew) || (role==="athlete" && isNew(r&&{by:"coach",at:r.at}));
+};
+const coachTouched = (doc, key) => !!threadOf(doc,key).reaction || msgsOf(doc,key).some(m=>m.by==="coach");
+
+// Live comments for one athlete-week. seenBefore is when this viewer last looked; it stays fixed while
+// the week is open so "NEW" marks don't vanish mid-read. Opening the week records now as seen.
+const useComments = (athleteId, wk, role) => {
+  const [doc, setDoc] = useState(null);
+  const [seenBefore, setSeenBefore] = useState(0);
+  useEffect(()=>{
+    if (!athleteId) return;
+    setDoc(null);
+    let first = true;
+    const ref = commentRef(athleteId, wk);
+    return ref.onSnapshot(snap=>{
+      const d = snap.exists ? snap.data() : {};
+      if (first) {
+        first = false;
+        setSeenBefore(d.seen?.[role]||0);
+        ref.set({seen:{[role]:Date.now()}},{merge:true}).catch(e=>console.error("Mark comments seen:",e));
+      }
+      setDoc(d);
+    }, e=>console.error("Comments:",e));
+  }, [athleteId, wk, role]);
+  const FV = firebase.firestore.FieldValue;
+  const ref = () => commentRef(athleteId, wk);
+  return {
+    doc: doc||{}, ready: !!doc, role, seenBefore,
+    post: (key, text) => ref().set({threads:{[key]:{msgs:FV.arrayUnion({by:role, text, at:Date.now()})}}, seen:{[role]:Date.now()}},{merge:true}),
+    remove: (key, msg) => ref().set({threads:{[key]:{msgs:FV.arrayRemove(msg)}}},{merge:true}),
+    // Tapping the current reaction again takes it off
+    react: (key, emoji) => ref().set({threads:{[key]:{reaction: threadOf(doc,key).reaction?.emoji===emoji ? FV.delete() : {emoji, at:Date.now()}}}},{merge:true}),
+  };
+};
+
+const fmtMsgTime = at => new Date(at).toLocaleString("en-GB",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+const NewChip = () => h("span",{style:{fontSize:9,fontWeight:700,color:"#fff",background:"var(--danger)",borderRadius:3,padding:"1px 4px",marginLeft:5,letterSpacing:"0.04em"}},"NEW");
+
+// One conversation (a session's report, or the week note). The coach can always write and react;
+// the athlete sees it once the coach has said something, and can reply.
+const CommentThread = ({c, k, athleteName, title, reactions=true}) => {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!c || !c.ready) return null;
+  const isCoach = c.role==="coach";
+  const msgs = msgsOf(c.doc,k), reaction = threadOf(c.doc,k).reaction;
+  const coachSpoke = msgs.some(m=>m.by==="coach");
+  if (!isCoach && !coachSpoke && !reaction) return null;
+  const canWrite = isCoach || coachSpoke;
+  const isNew = isNewFor(c.role, c.seenBefore);
+  const who = m => m.by==="coach" ? (isCoach?"You":"Coach") : (isCoach ? (athleteName||"Athlete").split(" ")[0] : "You");
+  const send = async () => {
+    const v = text.trim(); if (!v) return;
+    setBusy(true);
+    try { await c.post(k, v); setText(""); } catch(e) { alert("Couldn't send: "+e.message); }
+    setBusy(false);
+  };
+  return h("div",{style:{marginTop:8,padding:"8px 10px",background:"var(--surface-alt)",borderRadius:8,border:"0.5px solid var(--border)"}},
+    title&&h("div",{className:"stit",style:{marginBottom:6}},title),
+    reactions&&(isCoach||reaction)&&h("div",{style:{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",marginBottom:msgs.length||canWrite?6:0}},
+      isCoach
+        ? REACTIONS.map(e=>{
+            const on = reaction?.emoji===e;
+            return h("button",{key:e,type:"button",title:on?"Remove reaction":"React",onClick:()=>c.react(k,e).catch(err=>alert(err.message)),
+              style:{border:on?"1.5px solid var(--accent)":"0.5px solid var(--border-strong)",background:on?"var(--warning-bg)":"var(--surface)",
+                borderRadius:14,padding:"2px 9px",fontSize:15,lineHeight:1.3,cursor:"pointer",opacity:reaction&&!on?.55:1}},e);
+          })
+        : h("span",{style:{fontSize:13,color:"var(--text-muted2)",display:"inline-flex",alignItems:"center",gap:4}},
+            "Coach reacted",h("span",{style:{fontSize:18}},reaction.emoji),isNew({by:"coach",at:reaction.at})&&h(NewChip))
+    ),
+    msgs.map((m,i)=>{
+      const mine = m.by===c.role;
+      return h("div",{key:m.at+"_"+i,style:{display:"flex",justifyContent:mine?"flex-end":"flex-start",marginBottom:4}},
+        h("div",{style:{maxWidth:"85%",padding:"6px 10px",borderRadius:10,fontSize:13,lineHeight:1.4,color:"var(--text)",
+            background:m.by==="coach"?"var(--warning-bg)":"var(--info-bg)",border:"0.5px solid var(--border)"}},
+          h("div",{style:{fontSize:10,fontWeight:700,color:"var(--text-muted2)",marginBottom:2,display:"flex",alignItems:"center"}},
+            who(m)+" · "+fmtMsgTime(m.at), isNew(m)&&h(NewChip),
+            mine&&h("button",{type:"button",title:"Delete this message",onClick:()=>{ if(window.confirm("Delete this message?")) c.remove(k,m).catch(err=>alert(err.message)); },
+              style:{border:"none",background:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:13,lineHeight:1,marginLeft:6,padding:0}},"×")),
+          h("div",{style:{whiteSpace:"pre-wrap"}},m.text)
+        )
+      );
+    }),
+    canWrite&&h("div",{style:{display:"flex",gap:6,marginTop:msgs.length?4:0}},
+      h("input",{type:"text",value:text,onChange:e=>setText(e.target.value),onKeyDown:e=>{ if(e.key==="Enter") send(); },
+        placeholder:isCoach?(msgs.length?"Reply…":"Add a comment…"):"Reply to coach…",style:{fontSize:13,padding:"6px 9px"}}),
+      h("button",{className:"btnp btns",type:"button",onClick:send,disabled:busy||!text.trim(),style:{opacity:busy||!text.trim()?.5:1}},"Send")
+    )
+  );
+};
+
+// Days of the open week with something new from the other side (for the "💬 New" marks)
+const daysWithNew = c => !c?.ready ? [] : DAYS.filter(day=>Object.keys(c.doc.threads||{}).some(k=>k.startsWith(day+"_")&&threadHasNew(c.doc,k,c.role,c.seenBefore)));
+const NewCommentChip = ({label="💬 New"}) => h("span",{className:"stb",style:{background:"var(--danger-bg)",color:"var(--danger-text)"}},label);
+
 // ── Today card (athlete home) ────────────────────────────────────────────────
 // Today's workout, big and first, with Report right on it. Uses the current week's plan and reports.
-const TodayCard = ({plan, reports, athleteName, onReport}) => {
+const TodayCard = ({plan, reports, athleteName, onReport, comments}) => {
   const [open, setOpen] = useState(false);
   const day = todayShort(), d = plan[day], r = reports[day];
   const hasPlan = Object.keys(plan||{}).length>0;
@@ -1865,6 +1975,15 @@ const TodayCard = ({plan, reports, athleteName, onReport}) => {
       ),
       reported&&h("span",{className:"stb",style:{background:"var(--success-bg)",color:"var(--success-text)",fontSize:12}},"✓ Reported")
     ),
+    (()=>{
+      // New from the coach this week: point the athlete to the days below
+      const newDays = daysWithNew(comments);
+      const weekNew = comments?.ready && threadHasNew(comments.doc, WEEK_THREAD, "athlete", comments.seenBefore);
+      if (!newDays.length && !weekNew) return null;
+      const where = [weekNew&&"note for the week", ...newDays].filter(Boolean).join(", ");
+      return h("div",{style:{fontSize:13,fontWeight:600,color:"var(--danger-text)",background:"var(--danger-bg)",borderRadius:6,padding:"6px 10px",marginBottom:10}},
+        "💬 New from coach: "+where+" — see your plan below");
+    })(),
     !hasPlan
       ? h("div",{style:{fontSize:15,color:"var(--text-muted)",padding:"4px 0 2px"}},"No plan for this week yet — check back soon.")
     : isRest
@@ -1894,6 +2013,7 @@ const TodayCard = ({plan, reports, athleteName, onReport}) => {
               (sess.wu||sess.cd)&&h("span",null,(km>0?" · incl. ":"")+[sess.wu&&"warm-up "+sess.wu+" km",sess.cd&&"cool-down "+sess.cd+" km"].filter(Boolean).join(", "))
             ),
             rep?.status&&h("div",{style:{fontSize:13,fontWeight:700,marginTop:6,color:SS[rep.status]?.color}},SS[rep.status]?.label),
+            rep&&h(CommentThread,{c:comments,k:sessKey(day,si),athleteName}),
             h("button",{className:"btn btns",style:{marginTop:8,fontSize:12},title:GARMIN_EXPORT_TIP,onClick:()=>exportSessionFit(sess,si,sessions.length,day,0,athleteName)},"⌚  Export to Garmin (.fit)")
           );
         }),
@@ -1908,7 +2028,7 @@ const TodayCard = ({plan, reports, athleteName, onReport}) => {
   );
 };
 
-const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin,athleteName}) => {
+const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin,athleteName,comments}) => {
   const [editPlan,setEditPlan]=useState(false);
   const [repDay,setRepDay]=useState(null);
 
@@ -1979,12 +2099,16 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
                 })
               )
         ),
-        h("div",{style:{display:"flex",alignItems:"center",gap:6,flexShrink:0}},
+        h("div",{style:{display:"flex",alignItems:"center",justifyContent:"flex-end",flexWrap:"wrap",gap:6,flexShrink:0,maxWidth:150}},
+          daysWithNew(comments).includes(day)&&h(NewCommentChip),
           !isRest&&r?.sessions&&h("span",{className:"stb",style:{background:"var(--success-bg)",color:"var(--success-text)"}},"Reported"),
           !isCoach&&!isRest&&h("button",{className:"btn btns",onClick:()=>setRepDay(day)},r?.sessions?"Edit":"Report"),
           !isCoach&&isRest&&h("button",{className:"btn btns",style:{fontSize:11},onClick:()=>setRepDay(day)},r?.sleep?"Edit":"😴 Log sleep & stress")
         )
-      )
+      ),
+      // Comments under each reported session, full width of the day card so they stay readable on a phone
+      !isRest&&comments&&sessions.map((sess,si)=>r?.sessions?.[si]&&h("div",{key:"cm"+si,style:{marginLeft:42}},
+        h(CommentThread,{c:comments,k:sessKey(day,si),athleteName,title:sessions.length>1?"Session "+(si+1):null})))
     );
     } catch(e) {
       console.error("Error rendering day",day,e);
@@ -1994,6 +2118,7 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
 
   return h(Fragment,null,
     h(WeeklyCountdown,{weekOff}),
+    comments&&h("div",{style:{marginBottom:10}},h(CommentThread,{c:comments,k:WEEK_THREAD,athleteName,title:"Coach's note for the week",reactions:false})),
     DAYS.map(day=>renderSessions(day)),
     h(WeekCheckin,{data:reports.weekCheckin,isCoach,onSave:onSaveWeekCheckin}),
     repDay&&h(Modal,{title:(dayIsRest(plan[repDay])?"Rest day — ":"Report — ")+repDay,onClose:()=>setRepDay(null),wide:true},
@@ -2013,7 +2138,18 @@ const dayActualKm = r => {
 };
 
 // forDrive: no auto-print, CSS vars inlined and stat boxes as a table so the Google Docs import keeps the layout
-const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false) => {
+const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false, comments=null) => {
+  // Coach comments and reactions (and athlete replies) under each session, plus the note for the week
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[ch]));
+  const firstName = (athlete.name||"Athlete").split(" ")[0];
+  const fmtMsgs = msgs => msgs.map(m=>`<b>${m.by==="coach"?"Coach":esc(firstName)}:</b> ${esc(m.text)}`).join(" &nbsp;·&nbsp; ");
+  const commentRows = (day, sessions) => sessions.map((s,si)=>{
+    const k=sessKey(day,si), t=threadOf(comments,k), msgs=msgsOf(comments,k);
+    if(!t.reaction&&!msgs.length) return "";
+    return `<tr><td></td><td colspan="7" style="font-size:12px">💬 ${sessions.length>1?`Session ${si+1}: `:""}${t.reaction?t.reaction.emoji+" ":""}${fmtMsgs(msgs)}</td></tr>`;
+  }).join("");
+  const weekMsgs = msgsOf(comments, WEEK_THREAD);
+  const weekNoteHtml = weekMsgs.length ? `<div style="background:var(--surface-alt);border-left:3px solid var(--accent);border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:13px"><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Coach's note for the week</div>${fmtMsgs(weekMsgs)}</div>` : "";
   const weekStart = getWeekStart(weekOff);
   const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
   const dateStamp = weekKey(weekOff); // YYYY-MM-DD, filename-safe
@@ -2074,7 +2210,7 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false)
       <td>${effort}</td>
       <td style="font-family:monospace">${perf}</td>
       <td>😴${sleep} ${stressIcon}${stress}</td>
-    </tr>${notesList.map(({i,n})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">${sessions.length>1?`Session ${i+1}: `:""}"${n}"</td></tr>`).join("")}${garminList.map(({i,groups})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-size:12px">${sessions.length>1?`<b>Session ${i+1} Garmin laps:</b> `:"<b>Garmin laps:</b> "}${groups.map(g=>`${g.label}: ${formatGroupStats(g)}`).join(" &nbsp;·&nbsp; ")}</td></tr>`).join("")}`;
+    </tr>${notesList.map(({i,n})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">${sessions.length>1?`Session ${i+1}: `:""}"${n}"</td></tr>`).join("")}${garminList.map(({i,groups})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-size:12px">${sessions.length>1?`<b>Session ${i+1} Garmin laps:</b> `:"<b>Garmin laps:</b> "}${groups.map(g=>`${g.label}: ${formatGroupStats(g)}`).join(" &nbsp;·&nbsp; ")}</td></tr>`).join("")}${commentRows(day,sessions)}`;
   }).join("");
 
   const boxes = [
@@ -2118,6 +2254,7 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false)
   <h1>${athlete.name} — Weekly Summary — ${dateRangeFull}</h1>
   <div class="subtitle">${athlete.events||""} · 5K PB: ${athlete.pb5k||"–"}</div>
   ${boxesHtml}
+  ${weekNoteHtml}
   <table>
     <thead><tr>
       <th>Day</th><th>Session</th><th>Planned</th><th>Actual</th><th>Status</th><th>Effort</th><th>Pace / HR</th><th>Wellbeing</th>
@@ -2136,9 +2273,9 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false)
   return html.replace(/var\(--([a-z0-9-]+)\)/gi,(m,k)=>vars[k]||"inherit");
 };
 
-const printWeeklySummary = (athlete, plan, reports, weekOff) => {
+const printWeeklySummary = (athlete, plan, reports, weekOff, comments=null) => {
   const win = window.open("","_blank");
-  win.document.write(buildWeeklySummaryHtml(athlete, plan, reports, weekOff));
+  win.document.write(buildWeeklySummaryHtml(athlete, plan, reports, weekOff, false, comments));
   win.document.close();
 };
 
@@ -2282,9 +2419,10 @@ const toKmWeeks = rawWeeks =>
   }));
 
 // ── Needs-attention flags for the coach dashboard ────────────────────────────
-// weeks: loadAthleteWeeks output ending with the current week (needs ≥2 weeks; 6 gives the resting-HR baseline).
 // Returns this week's session compliance plus flags; "high" flags sort an athlete to the top.
-const athleteAttention = (weeks) => {
+// comments: {0: this week's comments doc, -1: last week's} for the comment counts.
+// Returns this week's session compliance plus flags; "high" flags sort an athlete to the top.
+const athleteAttention = (weeks, comments={}) => {
   const byOff = Object.fromEntries(weeks.map(w=>[w.off,w]));
   const cur = byOff[0];
   const flags = [];
@@ -2305,7 +2443,7 @@ const athleteAttention = (weeks) => {
     const off = dt < cur.start ? -1 : 0;
     const w=byOff[off]; if(!w) continue;
     const day=DAYS[dt.getDay()];
-    days.push({i, day, plan:w.plan[day], r:w.reports[day]});
+    days.push({i, day, off, plan:w.plan[day], r:w.reports[day]});
   }
 
   // Missed: past workout days (not today) with no report, or every session skipped
@@ -2344,7 +2482,11 @@ const athleteAttention = (weeks) => {
   if (hardEasy.length) flags.push({level:"med", text:`Easy run felt hard (effort 8+): ${hardEasy.map(x=>x.day).reverse().join(", ")}`});
 
   const score = flags.reduce((s,f)=>s+(f.level==="high"?10:1),0);
-  return {planned, done, flags, score};
+  // Coach comments over the same 7 days: reported sessions you have neither commented on nor reacted to,
+  // and whether the athlete wrote back since you last opened that week
+  const unanswered = days.reduce((n,x)=>n+(x.r?.sessions||[]).filter((s,si)=>s?.status&&!coachTouched(comments[x.off],sessKey(x.day,si))).length,0);
+  const replied = [0,-1].some(off=>{ const d=comments[off]; return Object.keys(d?.threads||{}).some(k=>msgsOf(d,k).some(m=>m.by==="athlete"&&m.at>(d.seen?.coach||0))); });
+  return {planned, done, flags, score, unanswered, replied};
 };
 
 const fmtKm = v => (Math.round(v*10)/10).toString();
@@ -2710,17 +2852,17 @@ const drive = {
   },
   // Creates or replaces this athlete/week's Google Doc. Skips the upload when nothing changed
   // since the last sync, so Drive's version history only holds real changes.
-  async syncWeek(athlete,plan,reports,weekOff){
+  async syncWeek(athlete,plan,reports,weekOff,threads){
     const wk=weekKey(weekOff);
     const key=`${athlete.id}_${wk}`;
-    const hash=String(hashStr(JSON.stringify([athlete.name,athlete.events,athlete.pb5k,plan,reports])));
+    const hash=String(hashStr(JSON.stringify([athlete.name,athlete.events,athlete.pb5k,plan,reports,threads||{}])));
     const existing=await this.findByProp("amit1Week",key);
     if(existing&&existing.appProperties?.amit1Hash===hash) return existing;
     const rootId=await this.ensureFolder(DRIVE_ROOT_NAME,"root");
     const folderId=await this.ensureFolder(athlete.name,athlete.id,rootId);
     const name=`${athlete.name} – Weekly Summary – ${wk}`;
     const appProperties={amit1Week:key,amit1Hash:hash};
-    const html=buildWeeklySummaryHtml(athlete,plan,reports,weekOff,true);
+    const html=buildWeeklySummaryHtml(athlete,plan,reports,weekOff,true,{threads});
     return existing
       ? this.upload(existing.id,{name,appProperties},html)
       : this.upload(null,{name,mimeType:"application/vnd.google-apps.document",parents:[folderId],appProperties},html);
@@ -2736,15 +2878,15 @@ const useDriveStatus = () => {
 };
 
 // Keeps the open week's Drive copy up to date; waits a few seconds so a burst of edits is one upload
-const useDriveSync = (athlete,plan,reports,weekOff,loading) => {
+const useDriveSync = (athlete,plan,reports,weekOff,loading,threads) => {
   const pending=useRef(null);
   const run=useCallback(async()=>{
-    const {athlete,plan,reports,weekOff}=pending.current;
+    const {athlete,plan,reports,weekOff,threads}=pending.current;
     const hasContent=DAYS.some(d=>plan[d]&&!dayIsRest(plan[d]))||Object.keys(reports||{}).length>0;
     if(!hasContent){drive.setStatus({state:"idle"});return;}
     drive.setStatus({state:"saving"});
     try{
-      const f=await drive.syncWeek(athlete,plan,reports,weekOff);
+      const f=await drive.syncWeek(athlete,plan,reports,weekOff,threads);
       drive.setStatus({state:"saved",link:f?.webViewLink,at:new Date()});
     }catch(e){ drive.setStatus({state:"error",msg:e.message}); }
   },[]);
@@ -2752,11 +2894,11 @@ const useDriveSync = (athlete,plan,reports,weekOff,loading) => {
     if(!GOOGLE_CLIENT_ID||loading) return;
     // A different athlete/week: forget the previous "Saved" link
     if(pending.current&&(pending.current.athlete.id!==athlete.id||pending.current.weekOff!==weekOff)) drive.setStatus({state:"idle"});
-    pending.current={athlete,plan,reports,weekOff};
+    pending.current={athlete,plan,reports,weekOff,threads};
     if(!drive.hasToken()){drive.setStatus({state:"idle"});return;}
     const t=setTimeout(run,3000);
     return()=>clearTimeout(t);
-  },[athlete,plan,reports,weekOff,loading,run]);
+  },[athlete,plan,reports,weekOff,loading,run,JSON.stringify(threads||{})]);
   // Click handler for the Drive button: connect if needed, then sync now (or open the doc)
   return useCallback(async()=>{
     const st=drive.status;
@@ -2802,7 +2944,8 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
   const [weightPrev,setWeightPrev]=useState(null);
   const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
   const today=todayShort();
-  const onDriveClick=useDriveSync(athlete,plan,reports,weekOff,loading);
+  const comments=useComments(athlete.id, weekKey(weekOff), "coach");
+  const onDriveClick=useDriveSync(athlete,plan,reports,weekOff,loading,comments.doc.threads);
 
   useEffect(()=>{
     Promise.all([
@@ -2910,7 +3053,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       ),
       h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",paddingBottom:4}},
         tab==="plan"&&h("button",{className:"btnp btns",onClick:()=>setEditPlan(true)},"Edit plan"),
-        h("button",{className:"btn btns",onClick:()=>printWeeklySummary(athlete,plan,reports,weekOff)},"📄 Summary"),
+        h("button",{className:"btn btns",onClick:()=>printWeeklySummary(athlete,plan,reports,weekOff,comments.doc)},"📄 Summary"),
         h(DriveButton,{onClick:onDriveClick}),
         tab!=="progress"&&h(Fragment,null,
           h("button",{className:"wnb",onClick:()=>setWeekOff(w=>w-1)},"‹"),
@@ -2921,7 +3064,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
     ),
     tab==="progress"&&h(ProgressView,{athleteId:athlete.id,groupId:athlete.groupId}),
     loading?h(Spinner):null,
-    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:athlete.name}),
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:athlete.name,comments}),
     !loading&&tab==="plan"&&h("div",{style:{marginTop:14}},h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:true})),
     !loading&&tab==="reports"&&h("div",null,
       DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
@@ -2974,6 +3117,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
                   rep.garminGroups.map((g,gi)=>h("div",{key:gi,style:{fontSize:12,marginBottom:2}},h("strong",null,g.label),": "+formatGroupStats(g)))
                 )
               ),
+              h(CommentThread,{c:comments,k:sessKey(day,si),athleteName:athlete.name}),
               si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed var(--border)",marginTop:12}})
             );
           })
@@ -3004,6 +3148,7 @@ const AthleteHome = ({user,onSignOut}) => {
   const [weightPrev,setWeightPrev]=useState(null);
   const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
   const today=todayShort();
+  const comments=useComments(user.uid, weekKey(weekOff), "athlete");
 
   useEffect(()=>{
     dbGet(`athletes/${user.uid}`).then(p=>{setProfile(p);});
@@ -3091,7 +3236,7 @@ const AthleteHome = ({user,onSignOut}) => {
       )
     ),
     h(RaceCountdown,{athleteId:user.uid,groupId:profile.groupId}),
-    weekOff===0&&!loading&&h(TodayCard,{plan,reports,athleteName:profile.name,onReport:saveReport}),
+    weekOff===0&&!loading&&h(TodayCard,{plan,reports,athleteName:profile.name,onReport:saveReport,comments}),
     h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
       h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
       h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
@@ -3110,7 +3255,7 @@ const AthleteHome = ({user,onSignOut}) => {
     ),
     tab==="progress"&&h(ProgressView,{athleteId:user.uid,groupId:profile.groupId}),
     loading?h(Spinner):null,
-    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:profile.name}),
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:profile.name,comments}),
     !loading&&tab==="plan"&&h("div",{style:{marginTop:14}},h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:false,onSave:saveWeight})),
     !loading&&tab==="reports"&&h("div",null,
       DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
@@ -3153,7 +3298,8 @@ const AthleteHome = ({user,onSignOut}) => {
               hasGroups&&h("div",{style:{gridColumn:"1/-1"}},
                 h("div",{style:{color:"var(--text-muted)",fontSize:10,marginBottom:2,fontWeight:600}},"GARMIN LAPS"),
                 rep.garminGroups.map((g,gi)=>h("div",{key:gi,style:{fontSize:12,marginBottom:2}},h("strong",null,g.label),": "+formatGroupStats(g)))
-              )
+              ),
+              h("div",{key:"cm",style:{gridColumn:"1/-1"}},h(CommentThread,{c:comments,k:sessKey(day,si),athleteName:profile.name}))
             );
           })
         );
@@ -3455,8 +3601,12 @@ const CoachDashboard = ({user,onSignOut}) => {
     setLoading(false);
     // Flags fill in per athlete as they load; 6 weeks gives the resting-HR baseline
     aths.forEach(a=>{
-      loadAthleteWeeks(a.id, a.groupId, 6)
-        .then(weeks=>setAttention(prev=>({...prev,[a.id]:athleteAttention(weeks)})))
+      Promise.all([
+        loadAthleteWeeks(a.id, a.groupId, 6),
+        dbGet(`comments/${a.id}/weeks/${weekKey(0)}`),
+        dbGet(`comments/${a.id}/weeks/${weekKey(-1)}`),
+      ])
+        .then(([weeks,c0,c1])=>setAttention(prev=>({...prev,[a.id]:athleteAttention(weeks,{0:c0,[-1]:c1})})))
         .catch(e=>setAttention(prev=>({...prev,[a.id]:{error:e.message}})));
     });
   };
@@ -3558,6 +3708,11 @@ const CoachDashboard = ({user,onSignOut}) => {
                 !at?"Checking…"
                 : at.error?"Couldn't load: "+at.error
                 : at.planned?`This week: ${at.done} / ${at.planned} sessions done`:"No sessions planned this week"
+              ),
+              at&&!at.error&&(at.unanswered>0||at.replied)&&h("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}},
+                at.replied&&h("span",{style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--danger-bg)",color:"var(--danger-text)"}},"💬 Replied to you"),
+                at.unanswered>0&&h("span",{style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--info-bg)",color:"var(--info-text)"}},
+                  "💬 "+at.unanswered+" report"+(at.unanswered>1?"s":"")+" without a comment")
               ),
               at?.flags?.length>0&&h("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}},
                 at.flags.map((f,i)=>h("span",{key:i,style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,
