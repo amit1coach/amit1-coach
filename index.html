@@ -1860,7 +1860,6 @@ const threadHasNew = (doc, key, role, seen) => {
   const isNew = isNewFor(role, seen), r = threadOf(doc,key).reaction;
   return msgsOf(doc,key).some(isNew) || (role==="athlete" && isNew(r&&{by:"coach",at:r.at}));
 };
-const coachTouched = (doc, key) => !!threadOf(doc,key).reaction || msgsOf(doc,key).some(m=>m.by==="coach");
 
 // Live comments for one athlete-week. seenBefore is when this viewer last looked; it stays fixed while
 // the week is open so "NEW" marks don't vanish mid-read. Opening the week records now as seen.
@@ -2419,43 +2418,53 @@ const toKmWeeks = rawWeeks =>
   }));
 
 // ── Needs-attention flags for the coach dashboard ────────────────────────────
-// Returns this week's session compliance plus flags; "high" flags sort an athlete to the top.
-// comments: {0: this week's comments doc, -1: last week's} for the comment counts.
-// Returns this week's session compliance plus flags; "high" flags sort an athlete to the top.
-const athleteAttention = (weeks, comments={}) => {
+// weeks: loadAthleteWeeks output ending with the current week (needs ≥2 weeks; 6 gives the resting-HR baseline).
+// comments: {0: this week's comments doc, -1: last week's}, for "Replied to you".
+// niggleSeen: the niggle key the coach marked "✓ Seen" (athlete profile field), so it stops showing.
+// Returns this week's session counts plus flags; "high" flags sort an athlete to the top.
+const niggleKey = (wk, text) => wk+"|"+text;
+const fmtFlagDay = dt => dt.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+const athleteAttention = (weeks, comments={}, niggleSeen="") => {
   const byOff = Object.fromEntries(weeks.map(w=>[w.off,w]));
   const cur = byOff[0];
   const flags = [];
+  const today = new Date(); today.setHours(0,0,0,0);
 
-  // This week: sessions done (done/modified) out of sessions planned
-  let planned=0, done=0;
-  DAYS.forEach(d=>{
+  // This week: sessions done (done/modified) out of sessions planned, plus the same count for the
+  // sessions already due — days before today, and today's once reported — so mid-week isn't misleading
+  let planned=0, done=0, due=0, doneDue=0;
+  DAYS.forEach((d,di)=>{
     const n=dayIsRest(cur.plan[d])?0:(cur.plan[d].sessions||[]).length;
-    planned+=n;
-    done+=(cur.reports[d]?.sessions||[]).slice(0,n).filter(s=>s?.status==="done"||s?.status==="modified").length;
+    const k=(cur.reports[d]?.sessions||[]).slice(0,n).filter(s=>s?.status==="done"||s?.status==="modified").length;
+    const dt=new Date(cur.start); dt.setDate(cur.start.getDate()+di);
+    planned+=n; done+=k;
+    if (dt<today) { due+=n; doneDue+=k; }
+    else if (dt.getTime()===today.getTime()) { const rep=(cur.reports[d]?.sessions||[]).slice(0,n).filter(s=>s?.status).length; due+=rep; doneDue+=k; }
   });
 
   // The last 7 days, most recent first (i=0 is today); may reach into last week
-  const today = new Date(); today.setHours(0,0,0,0);
   const days = [];
   for (let i=0;i<7;i++){
     const dt=new Date(today); dt.setDate(today.getDate()-i);
     const off = dt < cur.start ? -1 : 0;
     const w=byOff[off]; if(!w) continue;
     const day=DAYS[dt.getDay()];
-    days.push({i, day, off, plan:w.plan[day], r:w.reports[day]});
+    days.push({i, day, dt, off, plan:w.plan[day], r:w.reports[day]});
   }
+  // Day names with their date ("Thu 1 Oct"), oldest first, so last week's days aren't mistaken for this week's
+  const dayList = xs => xs.map(x=>fmtFlagDay(x.dt)).reverse().join(", ");
 
   // Missed: past workout days (not today) with no report, or every session skipped
   const missed = days.filter(x=>x.i>0&&!dayIsRest(x.plan)&&(
     !x.r?.sessions?.length || x.r.sessions.every(s=>s?.status==="skipped")));
   if (missed.length) flags.push({level:missed.length>=2?"high":"med",
-    text:`${missed.length} missed or unreported: ${missed.map(x=>x.day).reverse().join(", ")}`});
+    text:`${missed.length} missed or unreported: ${dayList(missed)}`});
 
-  // Niggle from the weekly check-in (this week, else last week's)
-  const ck = cur.reports.weekCheckin?.medical ? {m:cur.reports.weekCheckin.medical,last:false}
-    : byOff[-1]?.reports.weekCheckin?.medical ? {m:byOff[-1].reports.weekCheckin.medical,last:true} : null;
-  if (ck) flags.push({level:"high", text:`Niggle${ck.last?" (last week)":""}: "${ck.m.length>50?ck.m.slice(0,50)+"…":ck.m}"`});
+  // Niggle from the weekly check-in (this week, else last week's), until the coach marks it seen
+  const ck = cur.reports.weekCheckin?.medical ? {m:cur.reports.weekCheckin.medical,last:false,wk:cur.wk}
+    : byOff[-1]?.reports.weekCheckin?.medical ? {m:byOff[-1].reports.weekCheckin.medical,last:true,wk:byOff[-1].wk} : null;
+  if (ck && niggleSeen!==niggleKey(ck.wk,ck.m))
+    flags.push({level:"high", niggleKey:niggleKey(ck.wk,ck.m), text:`Niggle${ck.last?" (last week)":""}: "${ck.m.length>50?ck.m.slice(0,50)+"…":ck.m}"`});
 
   // Resting HR: latest reading vs the average of up to 4 earlier weeks
   const rhr = weeks.map(w=>parseFloat(w.reports.weekCheckin?.restingHr)).map(v=>v>0?v:null);
@@ -2471,22 +2480,20 @@ const athleteAttention = (weeks, comments={}) => {
   // Wellbeing in the last 7 days
   const stressDays = days.filter(x=>parseInt(x.r?.stress)>=4);
   const sleepDays  = days.filter(x=>x.r?.sleep&&parseInt(x.r.sleep)<=2);
-  if (stressDays.length) flags.push({level:"med", text:`High stress (4–5): ${stressDays.map(x=>x.day).reverse().join(", ")}`});
-  if (sleepDays.length)  flags.push({level:"med", text:`Poor sleep (1–2): ${sleepDays.map(x=>x.day).reverse().join(", ")}`});
+  if (stressDays.length) flags.push({level:"med", text:`High stress (4–5): ${dayList(stressDays)}`});
+  if (sleepDays.length)  flags.push({level:"med", text:`Poor sleep (1–2): ${dayList(sleepDays)}`});
 
   // Easy/recovery sessions reported at effort 8+
   const hardEasy = days.filter(x=>!dayIsRest(x.plan)&&(x.r?.sessions||[]).some((s,si)=>{
     const t=sessFirstType(x.plan.sessions[si]||{});
     return (t==="easy"||t==="recovery")&&parseInt(s?.effort)>=8;
   }));
-  if (hardEasy.length) flags.push({level:"med", text:`Easy run felt hard (effort 8+): ${hardEasy.map(x=>x.day).reverse().join(", ")}`});
+  if (hardEasy.length) flags.push({level:"med", text:`Easy run felt hard (effort 8+): ${dayList(hardEasy)}`});
 
   const score = flags.reduce((s,f)=>s+(f.level==="high"?10:1),0);
-  // Coach comments over the same 7 days: reported sessions you have neither commented on nor reacted to,
-  // and whether the athlete wrote back since you last opened that week
-  const unanswered = days.reduce((n,x)=>n+(x.r?.sessions||[]).filter((s,si)=>s?.status&&!coachTouched(comments[x.off],sessKey(x.day,si))).length,0);
+  // The athlete wrote back since the coach last opened that week
   const replied = [0,-1].some(off=>{ const d=comments[off]; return Object.keys(d?.threads||{}).some(k=>msgsOf(d,k).some(m=>m.by==="athlete"&&m.at>(d.seen?.coach||0))); });
-  return {planned, done, flags, score, unanswered, replied};
+  return {planned, done, due, doneDue, flags, score, replied};
 };
 
 const fmtKm = v => (Math.round(v*10)/10).toString();
@@ -3606,7 +3613,7 @@ const CoachDashboard = ({user,onSignOut}) => {
         dbGet(`comments/${a.id}/weeks/${weekKey(0)}`),
         dbGet(`comments/${a.id}/weeks/${weekKey(-1)}`),
       ])
-        .then(([weeks,c0,c1])=>setAttention(prev=>({...prev,[a.id]:athleteAttention(weeks,{0:c0,[-1]:c1})})))
+        .then(([weeks,c0,c1])=>setAttention(prev=>({...prev,[a.id]:athleteAttention(weeks,{0:c0,[-1]:c1},a.niggleSeen)})))
         .catch(e=>setAttention(prev=>({...prev,[a.id]:{error:e.message}})));
     });
   };
@@ -3635,6 +3642,20 @@ const CoachDashboard = ({user,onSignOut}) => {
     await dbDel(`athletes/${id}`);
     setAthletes(prev=>prev.filter(a=>a.id!==id));
     showToast("Athlete removed");
+  };
+
+  // "✓ Seen" on a niggle: remember which niggle (week + text) was dismissed, so it stays hidden until
+  // the athlete reports a different one
+  const markNiggleSeen=async(ath,key)=>{
+    try{
+      await dbSet(`athletes/${ath.id}`,{niggleSeen:key});
+      setAthletes(prev=>prev.map(a=>a.id===ath.id?{...a,niggleSeen:key}:a));
+      setAttention(prev=>{
+        const at=prev[ath.id]; if(!at?.flags) return prev;
+        const flags=at.flags.filter(f=>f.niggleKey!==key);
+        return {...prev,[ath.id]:{...at,flags,score:flags.reduce((s,f)=>s+(f.level==="high"?10:1),0)}};
+      });
+    }catch(e){showToast("Error: "+e.message,false);}
   };
 
   const addGroup=async(name)=>{
@@ -3707,22 +3728,22 @@ const CoachDashboard = ({user,onSignOut}) => {
               h("div",{style:{fontSize:12,color:"var(--text-muted)"}},
                 !at?"Checking…"
                 : at.error?"Couldn't load: "+at.error
-                : at.planned?`This week: ${at.done} / ${at.planned} sessions done`:"No sessions planned this week"
+                : at.planned?`This week: ${at.doneDue} of ${at.due} done so far · ${at.planned} planned`:"No sessions planned this week"
               ),
-              at&&!at.error&&(at.unanswered>0||at.replied)&&h("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}},
-                at.replied&&h("span",{style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--danger-bg)",color:"var(--danger-text)"}},"💬 Replied to you"),
-                at.unanswered>0&&h("span",{style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--info-bg)",color:"var(--info-text)"}},
-                  "💬 "+at.unanswered+" report"+(at.unanswered>1?"s":"")+" without a comment")
+              at&&!at.error&&at.replied&&h("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}},
+                h("span",{style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--danger-bg)",color:"var(--danger-text)"}},"💬 Replied to you")
               ),
               at?.flags?.length>0&&h("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}},
-                at.flags.map((f,i)=>h("span",{key:i,style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,
+                at.flags.map((f,i)=>h("span",{key:i,style:{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,display:"inline-flex",alignItems:"center",gap:6,
                   background:f.level==="high"?"var(--danger-bg)":"var(--warning-bg)",color:f.level==="high"?"var(--danger-text)":"var(--warning-text)"}},
-                  (f.level==="high"?"⚠ ":"• ")+f.text))
+                  (f.level==="high"?"⚠ ":"• ")+f.text,
+                  f.niggleKey&&h("button",{title:"Hide this niggle until the athlete reports a new one",onClick:e=>{e.stopPropagation();markNiggleSeen(ath,f.niggleKey);},
+                    style:{border:"0.5px solid var(--danger)",background:"var(--surface)",color:"var(--danger-text)",borderRadius:4,fontSize:10,fontWeight:700,padding:"1px 6px",cursor:"pointer"}},"✓ Seen")))
               ),
               at&&!at.error&&!at.flags.length&&at.planned>0&&h("div",{style:{fontSize:11,color:"var(--success-text)",marginTop:4}},"✓ Nothing to flag")
             ),
             h("div",{style:{display:"flex",alignItems:"center",gap:8,flexShrink:0}},
-              at?.planned>0&&h("span",{className:"mono",style:{fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:5,background:"var(--neutral-bg)",color:"var(--text-muted2)"}},at.done+"/"+at.planned),
+              at?.due>0&&h("span",{className:"mono",title:"Sessions done so far this week / sessions due so far",style:{fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:5,background:"var(--neutral-bg)",color:"var(--text-muted2)"}},at.doneDue+"/"+at.due),
               h("button",{onClick:e=>{e.stopPropagation();if(window.confirm("Remove "+ath.name+"?"))deleteAthlete(ath.id);},style:{border:"0.5px solid var(--danger)",background:"var(--danger-bg-strong)",cursor:"pointer",color:"var(--danger)",fontSize:13,fontWeight:600,padding:"3px 9px",borderRadius:5}},"✕")
             )
           )
