@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<title>מבחן שופט מתלמד</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700&family=Frank+Ruhl+Libre:wght@500;700;900&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow column, an athletics-track band as the only ornament, sticky progress "lane" at the bottom during the exam */
+:root{
+  --bg:#F2F4F1; --surface:#FFFFFF; --ink:#18211C; --muted:#5A655F; --line:#D3DAD4;
+  --track:#B5422B; --track-ink:#FFFFFF; --field:#2D6848;
+  --ok:#2A7A4C; --ok-bg:#E3F2E8; --bad:#B3261E; --bad-bg:#FBE6E4; --part:#9A6200; --part-bg:#FBF0DA;
+  --focus:#1F5FBF;
+  --f-display:"Frank Ruhl Libre","David","Times New Roman",serif;
+  --f-body:"Assistant","Segoe UI","Arial Hebrew",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111613; --surface:#19201C; --ink:#E7ECE8; --muted:#9AA6A0; --line:#2C3731;
+  --track:#D9694B; --track-ink:#1A0F0B; --field:#72BF92;
+  --ok:#6CC892; --ok-bg:#183323; --bad:#F27B70; --bad-bg:#3A1A17; --part:#E8B357; --part-bg:#3A2C10;
+  --focus:#7FB0FF; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#111613; --surface:#19201C; --ink:#E7ECE8; --muted:#9AA6A0; --line:#2C3731;
+  --track:#D9694B; --track-ink:#1A0F0B; --field:#72BF92;
+  --ok:#6CC892; --ok-bg:#183323; --bad:#F27B70; --bad-bg:#3A1A17; --part:#E8B357; --part-bg:#3A2C10;
+  --focus:#7FB0FF; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:17px;line-height:1.6;direction:rtl}
+.wrap{max-width:780px;margin:0 auto;padding-inline:16px;padding-block:0 120px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.2}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* track band */
+.band{height:34px;background:
+  repeating-linear-gradient(to bottom,transparent 0 6px,rgba(255,255,255,.85) 6px 7px),
+  var(--track);border-radius:0 0 6px 6px;position:relative;overflow:hidden}
+.band::after{content:"";position:absolute;inset-block:0;left:18%;width:10px;
+  background:repeating-linear-gradient(to bottom,#fff 0 5px,#111 5px 10px);opacity:.9}
+header{padding-block:28px 8px;display:grid;gap:6px}
+.eyebrow{font-size:13px;letter-spacing:.08em;color:var(--muted);font-weight:600;direction:ltr;text-align:right}
+header h1{font-size:clamp(30px,6vw,42px);font-weight:900}
+header p{margin:0;color:var(--muted);max-width:60ch}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px}
+.stack{display:grid;gap:18px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0;padding:0;list-style:none}
+.facts li{border-top:3px solid var(--track);padding-top:8px}
+.facts b{display:block;font-family:var(--f-display);font-size:26px;font-variant-numeric:tabular-nums}
+.facts span{color:var(--muted);font-size:15px}
+.field-label{font-weight:600;display:block;margin-bottom:6px}
+input[type=text]{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.err{color:var(--bad);font-size:15px;margin:6px 0 0}
+.btn{border:0;border-radius:8px;padding:11px 22px;font-weight:700;background:var(--track);color:var(--track-ink)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn:hover{filter:brightness(1.06)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.note{color:var(--muted);font-size:15px;margin:0}
+
+/* questions */
+.q{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;display:grid;gap:12px;min-width:0}
+.q-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.q-num{font-family:var(--f-display);font-weight:700;font-size:15px;color:var(--track)}
+.chip{font-size:13px;font-weight:600;padding:2px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.multi{border-color:var(--field);color:var(--field)}
+.q-text{font-size:18px;font-weight:600;margin:0}
+.q-text table{border-collapse:collapse;margin-top:8px;font-weight:500;font-size:16px}
+.q-text td,.q-text th{border:1px solid var(--line);padding:4px 12px;text-align:center}
+.q-text th{font-weight:600;color:var(--muted)}
+.mono{font-family:var(--f-mono);letter-spacing:.1em;direction:ltr;display:inline-block}
+.opts{display:grid;gap:8px}
+.opt{display:grid;grid-template-columns:auto auto 1fr;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--bg)}
+.opt:hover{border-color:var(--muted)}
+.opt input{margin-top:6px;accent-color:var(--track);width:17px;height:17px}
+.opt .let{font-weight:700;color:var(--muted);min-width:1.2em}
+.opt:has(input:checked){border-color:var(--track);box-shadow:inset 0 0 0 1px var(--track)}
+
+/* sticky progress lane */
+.bar{position:fixed;inset-inline:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+.bar-in{max-width:780px;margin:0 auto;display:grid;gap:8px}
+.lane{display:grid;grid-template-columns:repeat(25,1fr);gap:3px;direction:rtl}
+.lane a{height:10px;border-radius:2px;background:var(--line);display:block}
+.lane a.done{background:var(--track)}
+.bar-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.count{font-variant-numeric:tabular-nums;font-weight:600}
+.confirm{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--part-bg);color:var(--ink);border-radius:8px;padding:8px 12px}
+
+/* results */
+.score{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center}
+.score-num{font-family:var(--f-display);font-weight:900;font-size:76px;line-height:1;font-variant-numeric:tabular-nums}
+.score-num small{font-size:24px;color:var(--muted);font-weight:500}
+.verdict{display:inline-block;font-weight:700;padding:3px 12px;border-radius:99px;font-size:15px}
+.verdict.pass{background:var(--ok-bg);color:var(--ok)}
+.verdict.fail{background:var(--bad-bg);color:var(--bad)}
+.tally{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 0;padding:0;list-style:none;font-size:15px;color:var(--muted)}
+.tally b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+.cert{border:2px solid var(--field);border-radius:10px;padding:26px 22px;text-align:center;display:grid;gap:8px;background:var(--surface);position:relative;overflow:hidden}
+.cert::before{content:"";position:absolute;inset-inline:0;top:0;height:8px;background:repeating-linear-gradient(to left,var(--track) 0 40px,var(--surface) 40px 44px)}
+.cert .eyebrow{text-align:center}
+.cert h2{font-size:22px;color:var(--field)}
+.cert .who{font-family:var(--f-display);font-size:clamp(30px,7vw,44px);font-weight:900;word-break:break-word}
+.cert dl{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 28px;margin:8px 0 0}
+.cert dt{font-size:13px;color:var(--muted)}
+.cert dd{margin:0;font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
+
+.review-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
+.st{font-size:13px;font-weight:700;padding:2px 10px;border-radius:99px}
+.st.full{background:var(--ok-bg);color:var(--ok)}
+.st.part{background:var(--part-bg);color:var(--part)}
+.st.zero{background:var(--bad-bg);color:var(--bad)}
+.q.r-full{border-inline-start:4px solid var(--ok)}
+.q.r-part{border-inline-start:4px solid var(--part)}
+.q.r-zero{border-inline-start:4px solid var(--bad)}
+.ropt{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;padding:8px 12px;border-radius:8px;border:1px solid var(--line)}
+.ropt .mark{font-weight:700;width:1.2em;text-align:center}
+.ropt .tag{font-size:13px;font-weight:600;white-space:nowrap}
+.ropt.hit{background:var(--ok-bg);border-color:var(--ok)} .ropt.hit .mark,.ropt.hit .tag{color:var(--ok)}
+.ropt.miss{border:1px dashed var(--ok)} .ropt.miss .mark,.ropt.miss .tag{color:var(--ok)}
+.ropt.wrong{background:var(--bad-bg);border-color:var(--bad)} .ropt.wrong .mark,.ropt.wrong .tag{color:var(--bad)}
+.explain{margin:0;font-size:15.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+.explain b{color:var(--ink)}
+.pts{font-variant-numeric:tabular-nums;font-size:14px;color:var(--muted)}
+
+@media (max-width:520px){
+  .score{grid-template-columns:1fr}
+  .score-num{font-size:60px}
+  .q{padding:16px}
+}
+@media (prefers-reduced-motion:no-preference){ .q,.panel,.cert{animation:in .25s ease-out both} @keyframes in{from{transform:translateY(6px)}to{transform:none}} }
+.save{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:15px;font-weight:600;padding:8px 12px;border-radius:8px;background:var(--bg);color:var(--muted)}
+.save.ok{background:var(--ok-bg);color:var(--ok)}
+.save.bad{background:var(--bad-bg);color:var(--bad)}
+.btn:disabled{opacity:.6;cursor:wait}
+</style>
+</head>
+<body>
+
+<div class="band" aria-hidden="true"></div>
+<div class="wrap" id="app" dir="rtl" lang="he">
+  <header>
+    <div class="eyebrow">APPRENTICE LEVEL REFEREE · ATHLETICS</div>
+    <h1>מבחן שופט מתלמד באתלטיקה קלה</h1>
+    <p>חוקי התחרות והחוקים הטכניים של World Athletics: ריצות, משוכות, שליחים, קפיצות, זריקות וקרב רב.</p>
+  </header>
+  <main id="view"></main>
+</div>
+<div class="bar" id="bar" hidden></div>
+
+<script>
+document.documentElement.setAttribute('dir','rtl');
+document.documentElement.setAttribute('lang','he');
+
+const PASS_MARK = 80;          // ציון עובר
+const LETTERS = ['א','ב','ג','ד','ה'];
+
+/* type: 's' = תשובה נכונה אחת, 'm' = כמה תשובות נכונות. c:1 מסמן תשובה נכונה. */
+const QUESTIONS = [
+{id:'start-commands',t:'s',
+ q:'בריצת 400 מ\' (וגם בקטע הראשון של שליחים 4×400 מ\'), מהן פקודות המזניק?',
+ o:[{x:'"למקומות", "היכון", ולאחר שכל הרצים יציבים בתנוחת "היכון" – ירייה',c:1},
+    {x:'"למקומות" ולאחר מכן ירייה, מזינוק עמידה'},
+    {x:'"היכון" בלבד ולאחר מכן ירייה'},
+    {x:'"למקומות", "היכון" ו"צא!" בקול, ללא ירייה'}],
+ e:'בכל הריצות עד 400 מ\' כולל, ובקטע הראשון של שליחים 4×200, 4×400 ושליחים מעורבים, הפקודות הן "למקומות" ו"היכון". הזינוק מכריעה ובמכשירי זינוק. בריצות ארוכות מ-400 מ\' נותנים רק "למקומות", והזינוק מעמידה.'},
+
+{id:'false-start',t:'s',
+ q:'בגמר 100 מ\' (לא במסגרת קרב רב) רץ זינק לפני הירייה, ומערכת בקרת הזינוק אישרה זאת. מה ההחלטה?',
+ o:[{x:'הרץ האחראי לזינוק הפסול נפסל מיד',c:1},
+    {x:'הרץ מקבל אזהרה, וזינוק פסול נוסף שלו יגרום לפסילתו'},
+    {x:'כל הרצים מקבלים אזהרה, והרץ הבא שיזנק זינוק פסול ייפסל'},
+    {x:'הרץ מועבר למסלול החיצוני והמקצה מתחיל מחדש'}],
+ e:'בתחרויות רגילות כל רץ שאחראי לזינוק פסול נפסל, כבר בזינוק הפסול הראשון. החריג הוא קרב רב, שבו מותר זינוק פסול אחד בכל מקצה.'},
+
+{id:'pole-vault',t:'m',
+ q:'קפיצה במוט: אילו מהמקרים הבאים נרשמים כניסיון כושל? סמנו את כל התשובות הנכונות.',
+ o:[{x:'הרף אינו נשאר על התומכים בגלל פעולת הקופץ במהלך הקפיצה',c:1},
+    {x:'לפני שעבר את הרף, הקופץ נוגע בגופו או במוט בקרקע (כולל מזרן הנחיתה) מעבר למישור האנכי של החלק העליון של לוח העצירה',c:1},
+    {x:'לאחר ההינתקות מהקרקע, הקופץ מעביר את היד התחתונה אל מעל היד העליונה, או מזיז את היד העליונה גבוה יותר על המוט',c:1},
+    {x:'המוט נשבר במהלך הניסיון'}],
+ e:'שלושת המקרים הראשונים הם כישלון. אם המוט נשבר במהלך הניסיון, הניסיון אינו נחשב כושל והקופץ מקבל ניסיון חדש.'},
+
+{id:'start-cards',t:'m',
+ q:'אילו מההתאמות הבאות בין כרטיס המזניק למשמעותו נכונות? סמנו את כל התשובות הנכונות.',
+ o:[{x:'כרטיס ירוק: לא נרשם זינוק פסול לרץ',c:1},
+    {x:'כרטיס חצוי באלכסון אדום/שחור: הרץ נפסל בשל זינוק פסול',c:1},
+    {x:'כרטיס חצוי באלכסון צהוב/שחור: אזהרה לרץ שאחראי לזינוק הפסול הראשון במקצה של קרב רב',c:1},
+    {x:'כרטיס חצוי באלכסון צהוב/שחור: אזהרה כללית לכל רצי המקצה אחרי זינוק פסול ראשון בריצה אישית'}],
+ e:'האזהרה הכללית לכל הרצים אחרי זינוק פסול ראשון בוטלה לפני שנים רבות. היום, בתחרות רגילה, הרץ האחראי נפסל מיד (אדום/שחור). צהוב/שחור משמש רק בקרב רב.'},
+
+{id:'finish',t:'s',
+ q:'סדר ההגעה לסיום נקבע לפי הרגע שבו ___ של הרץ מגיע למישור האנכי של הקצה הקרוב של קו הסיום.',
+ o:[{x:'הגוף (הטורסו), לא כולל ראש, צוואר, ידיים ורגליים',c:1},
+    {x:'הראש או הצוואר'},
+    {x:'חלק כלשהו בגוף, כולל יד או רגל'},
+    {x:'כף הרגל המובילה'}],
+ e:'רק הטורסו קובע. הראש, הצוואר, הזרועות, הידיים, הרגליים וכפות הרגליים אינם נחשבים.'},
+
+{id:'hand-timing',t:'s',
+ q:'במדידת זמנים ידנית בריצת 100 מ\', שלושת הרשמים הרשמיים של המקום הראשון מדדו: 11.23, 11.27 ו-11.31. מה הזמן הרשמי?',
+ o:[{x:'11.3',c:1},{x:'11.2'},{x:'11.27'},{x:'11.4'}],
+ e:'כששלושת הזמנים שונים זה מזה, הזמן האמצעי (11.27) הוא הרשמי. במדידה ידנית מעגלים כל זמן שאינו מסתיים באפס לעשירית השנייה הבאה, הגבוהה יותר: 11.3.'},
+
+{id:'wind-events',t:'m',
+ q:'באילו מהמקצועות הבאים מודדים מהירות רוח לצורך הכרה בהישג? סמנו את כל התשובות הנכונות.',
+ o:[{x:'100 מ\'',c:1},{x:'200 מ\'',c:1},{x:'קפיצה משולשת',c:1},{x:'קפיצה לגובה'},{x:'400 מ\' משוכות'}],
+ e:'רוח נמדדת בריצות 100 מ\' ו-200 מ\', ב-100 מ\' משוכות וב-110 מ\' משוכות, ובקפיצה לרוחק ובקפיצה משולשת. בקפיצות האנכיות ובריצות של 400 מ\' ומעלה לא מודדים רוח.'},
+
+{id:'wind-legal',t:'s',
+ q:'בגמר קפיצה לרוחק נמדדה בקפיצה הטובה של המנצחת רוח גבית של ‎+2.4‎ מ\'/שנ\'. מה מעמד ההישג?',
+ o:[{x:'ההישג נרשם ותקף לדירוג בתחרות, אך אינו מוכר כשיא',c:1},
+    {x:'הקפיצה נפסלת והקופצת מקבלת ניסיון חוזר'},
+    {x:'ההישג נמחק, ונלקחת הקפיצה הטובה הבאה שבה הרוח לא עלתה על 2.0 מ\'/שנ\''},
+    {x:'ההישג מוכר גם כשיא, כי הרוח נמדדת רק במשך 5 שניות'}],
+ e:'רוח גבית מעל 2.0 מ\'/שנ\' אינה פוסלת את ההישג בתחרות. היא רק מונעת את הכרתו כשיא או כקריטריון שמחייב רוח חוקית.'},
+
+{id:'lane-straight',t:'s',
+ q:'בריצת 200 מ\' רץ דורך מחוץ לקו החיצוני של מסלולו בישורת, ללא יתרון ממשי וללא הפרעה לאחר. מה ההחלטה?',
+ o:[{x:'הרץ אינו נפסל',c:1},
+    {x:'הרץ נפסל, כי יצא ממסלולו'},
+    {x:'הרץ נפסל רק אם זה קרה לו פעמיים'},
+    {x:'הרץ אינו נפסל, אך מוסיפים לזמנו עשירית שנייה'}],
+ e:'יציאה מחוץ למסלול בישורת, או מחוץ לקו החיצוני בעקומה, אינה גורמת לפסילה אם לא הופק יתרון ממשי ולא הייתה הפרעה לרץ אחר. דריכה על הקו השמאלי (הפנימי) או בתוכו בעקומה גורמת לפסילה.'},
+
+{id:'relay-zone',t:'s',
+ q:'בשליחים 4×100 מ\', מה קובע אם המסירה בוצעה בתוך אזור ההחלפה (באורך 30 מ\')?',
+ o:[{x:'מיקום המקל',c:1},
+    {x:'מיקום הגוף של הרץ המוסר'},
+    {x:'מיקום כפות הרגליים של הרץ המקבל'},
+    {x:'ששני הרצים נמצאים כולם בתוך האזור'}],
+ e:'המסירה מתחילה כשהמקל נוגע לראשונה ברץ המקבל, ומסתיימת כשהמקל נמצא רק בידו. כל זה צריך לקרות בתוך האזור, ורק מיקום המקל קובע.'},
+
+{id:'relay-4x400',t:'m',
+ q:'שליחים 4×400 מ\': אילו מהמשפטים הבאים נכונים? סמנו את כל התשובות הנכונות.',
+ o:[{x:'הקטע הראשון נרוץ כולו במסלולים',c:1},
+    {x:'הרץ השני רץ במסלולו עד קו ההתפרקות שאחרי העקומה הראשונה',c:1},
+    {x:'אם המקל נפל, הרץ שהפיל אותו חייב להרים אותו. מותר לו לצאת ממסלולו לשם כך, בתנאי שאינו מקצר את המרחק ואינו מפריע לאחרים',c:1},
+    {x:'מותר לזרוק את המקל לרץ הבא, אם הוא נתפס בתוך אזור ההחלפה'},
+    {x:'מותר ללבוש כפפות כדי לשפר את האחיזה במקל'}],
+ e:'אסור לזרוק את המקל, ואסור ללבוש כפפות או למרוח חומר על הידיים לשיפור האחיזה. אם המקל נפל, רק הרץ שהפיל אותו מרים אותו.'},
+
+{id:'hurdles-dq',t:'s',
+ q:'בריצת 110 מ\' משוכות, איזה מהמקרים הבאים גורם לפסילת הרץ?',
+ o:[{x:'ברגע המעבר, רגל הגרירה או כף רגלה עוברת לצד המשוכה, מתחת למישור האופקי של ראש המשוכה',c:1},
+    {x:'המשוכה נפלה אחרי מגע של עקב רגל הגרירה במעבר רגיל'},
+    {x:'הרץ החליף את רגל ההובלה בין משוכה למשוכה'},
+    {x:'נעל הרץ נגעה בראש המשוכה, והמשוכה לא נפלה'}],
+ e:'הפלת משוכה במעבר רגיל אינה גורמת לפסילה. העברת רגל לצד המשוכה, מתחת לגובה ראשה, גורמת לפסילה. כך גם מעבר על משוכה שאינה במסלולו של הרץ.'},
+
+{id:'steeple',t:'s',
+ q:'כמה מעברי משוכות וכמה קפיצות בור מים יש בריצת 3000 מ\' מכשולים?',
+ o:[{x:'28 מעברי משוכות ו-7 קפיצות בור מים',c:1},
+    {x:'35 מעברי משוכות ללא בור מים'},
+    {x:'28 מעברי משוכות ו-5 קפיצות בור מים'},
+    {x:'30 מעברי משוכות ו-7 קפיצות בור מים'}],
+ e:'ב-3000 מ\' מכשולים: 28 מעברי משוכות ו-7 קפיצות בור מים. מותר לעבור את המכשול בכל צורה, כולל דריכה עליו. רץ שאינו עובר דרך בור המים, או עוקף מכשול, נפסל.'},
+
+{id:'high-jump',t:'m',
+ q:'קפיצה לגובה: אילו מהמשפטים הבאים נכונים? סמנו את כל התשובות הנכונות.',
+ o:[{x:'הניתור חייב להתבצע מרגל אחת',c:1},
+    {x:'שלושה כישלונות רצופים, באותו גובה או בגבהים שונים, מוציאים את הקופץ מהתחרות',c:1},
+    {x:'מותר לקופץ לוותר על גובה ולקפוץ לראשונה בגובה גבוה יותר',c:1},
+    {x:'ניתור משתי רגליים מותר, אם הקופץ נוחת על המזרן'},
+    {x:'קופץ שנכשל פעמיים בגובה מסוים חייב לנסות שוב באותו גובה, ואינו רשאי לעבור לגובה הבא'}],
+ e:'הקופץ רשאי לוותר על כל גובה. מי שנכשל פעמיים יכול לעבור לגובה הבא עם ניסיון אחד שנותר לו. שלושה כישלונות רצופים מוציאים מהתחרות (למעט קפיצת הכרעה על המקום הראשון).'},
+
+{id:'hj-countback',t:'s',
+ q:'קפיצה לגובה. O = הצלחה, X = כישלון. מי מדורג גבוה יותר?',
+ h:'<table><tr><th></th><th>1.80</th><th>1.85</th><th>1.88</th></tr>'+
+   '<tr><th>קופץ א\'</th><td><span class="mono">O</span></td><td><span class="mono">XO</span></td><td><span class="mono">XXX</span></td></tr>'+
+   '<tr><th>קופץ ב\'</th><td><span class="mono">XO</span></td><td><span class="mono">O</span></td><td><span class="mono">XXX</span></td></tr></table>',
+ o:[{x:'קופץ ב\', כי הצליח במספר ניסיונות קטן יותר בגובה 1.85',c:1},
+    {x:'קופץ א\', כי הצליח בגובה 1.80 בניסיון הראשון'},
+    {x:'תיקו, ושניהם מדורגים באותו מקום'},
+    {x:'קופץ א\', כי יש לו פחות כישלונות בסך הכול'}],
+ e:'שניהם עברו 1.85. הקריטריון הראשון: פחות קפיצות בגובה שבו נוצר השוויון (1.85). לקופץ ב\' קפיצה אחת ולקופץ א\' שתיים, לכן ב\' לפני א\'. רק אם עדיין יש שוויון בודקים את סך הכישלונות. גם שם הם שווים כאן: ארבעה לכל אחד.'},
+
+{id:'protest',t:'s',
+ q:'קופץ לרוחק סבור שתוצאתו נרשמה בטעות. מהי הדרך הנכונה להגיש מחאה?',
+ o:[{x:'בעל-פה לשופט הראשי (Referee), תוך 30 דקות מההכרזה הרשמית על התוצאה',c:1},
+    {x:'בכתב ישירות לוועדת הערעורים (Jury of Appeal), תוך 24 שעות'},
+    {x:'לשופט המדידה בבור, ורק עד סיום הסיבוב הבא'},
+    {x:'למנהל התחרות, בכל עת עד סוף יום התחרות'}],
+ e:'מחאה על תוצאה מוגשת תחילה בעל-פה לשופט הראשי, תוך 30 דקות מההכרזה הרשמית. על החלטתו אפשר לערער בכתב לוועדת הערעורים, תוך 30 דקות מההודעה על ההחלטה, בצירוף פיקדון.'},
+
+{id:'lj-fouls',t:'m',
+ q:'קפיצה לרוחק: אילו מהמקרים הבאים הם ניסיון כושל? סמנו את כל התשובות הנכונות.',
+ o:[{x:'הקופץ נגע בקרקע שמעבר לקו הניתור בחלק כלשהו של גופו, בריצת התנופה או בניתור',c:1},
+    {x:'הקופץ השתמש בצורה כלשהי של סלטה',c:1},
+    {x:'אחרי הנחיתה הקופץ הלך חזרה דרך בור הנחיתה',c:1},
+    {x:'הקופץ ניתר מהמסלול, לפני קרש הניתור'},
+    {x:'בנחיתה הקופץ נגע בחול ביד, מאחורי עקביו'}],
+ e:'ניתור לפני הקרש הוא חוקי, והמדידה נעשית עד קו הניתור. נגיעה ביד מאחורי העקבים אינה כישלון, אבל המדידה תיעשה מסימן היד, כי זה הסימן הקרוב ביותר לקו.'},
+
+{id:'lj-measure',t:'s',
+ q:'איך מודדים קפיצה לרוחק חוקית?',
+ o:[{x:'מהסימן הקרוב ביותר לקו הניתור שהשאיר חלק כלשהו של הגוף בבור, אל קו הניתור או המשכו, בניצב לקו',c:1},
+    {x:'מסימן העקבים ועד קו הניתור'},
+    {x:'מהסימן הקרוב ביותר ועד הנקודה שבה כף הרגל ניתרה בפועל'},
+    {x:'מהסימן הרחוק ביותר בבור ועד קו הניתור'}],
+ e:'המדידה היא מהסימן הקרוב ביותר שהשאיר הגוף (או דבר שהיה מחובר לגוף) בבור, אל קו הניתור או המשכו, בניצב לקו. לא מודדים מנקודת הניתור בפועל.'},
+
+{id:'tj-phases',t:'s',
+ q:'מהו הרצף הנכון של שלבי הקפיצה המשולשת?',
+ o:[{x:'דילוג: נחיתה על רגל הניתור. צעד: נחיתה על הרגל השנייה. ניתור: נחיתה בבור',c:1},
+    {x:'דילוג: נחיתה על הרגל השנייה. צעד: נחיתה על רגל הניתור. ניתור: נחיתה בבור'},
+    {x:'צעד: נחיתה על רגל הניתור. דילוג: נחיתה על הרגל השנייה. ניתור: נחיתה בבור'},
+    {x:'כל רצף מותר, בתנאי שיש שלוש נחיתות'}],
+ e:'בדילוג נוחתים על אותה רגל שניתרו ממנה, בצעד על הרגל השנייה, ואחריו בא הניתור לבור. נגיעה מקרית של "הרגל הרדומה" בקרקע אינה כישלון.'},
+
+{id:'shot-put',t:'m',
+ q:'הדיפת כדור: אילו מהמשפטים הבאים נכונים? סמנו את כל התשובות הנכונות.',
+ o:[{x:'הכדור נהדף מהכתף ביד אחת. בתחילת הניסיון הוא נוגע בצוואר או בסנטר או קרוב אליהם, והיד אינה יורדת מתחת למצב זה במהלך ההדיפה',c:1},
+    {x:'מותר לגעת בצד הפנימי של לוח העצירה במהלך הניסיון',c:1},
+    {x:'נגיעה בחלק העליון של לוח העצירה במהלך הניסיון היא ניסיון כושל',c:1},
+    {x:'אחרי נחיתת הכדור יש לצאת מהמעגל דרך חציו הקדמי'},
+    {x:'מותר ללבוש כפפות'}],
+ e:'יוצאים מהמעגל רק דרך החצי האחורי, ורק אחרי שהכדור נגע בקרקע. בהדיפת כדור אסור ללבוש כפפות. בזריקות המעגל, כפפות מותרות רק בזריקת פטיש.'},
+
+{id:'javelin',t:'s',
+ q:'מתי זריקת כידון חוקית מבחינת נחיתת הכידון?',
+ o:[{x:'ראש המתכת פוגע בקרקע לפני כל חלק אחר של הכידון, והכידון נוחת בתוך הקצוות הפנימיים של קווי הגזרה',c:1},
+    {x:'הכידון ננעץ בקרקע ונשאר נעוץ'},
+    {x:'כל חלק של הכידון יכול לפגוע ראשון בקרקע, בתנאי שהכידון נחת בתוך הגזרה'},
+    {x:'הכידון נוחת על קו הגזרה'}],
+ e:'אין צורך שהכידון יינעץ בקרקע. ראש המתכת חייב לפגוע ראשון, בתוך הגזרה. נחיתה על קו הגזרה היא כישלון. מודדים מהנקודה שבה ראש הכידון פגע לראשונה בקרקע.'},
+
+{id:'leave-circle',t:'s',
+ q:'זריקת דיסקוס: מתי ואיך רשאי הזורק לצאת מהמעגל?',
+ o:[{x:'רק אחרי שהדיסקוס נגע בקרקע, דרך החצי האחורי של המעגל',c:1},
+    {x:'מיד עם שחרור הדיסקוס, דרך החצי הקדמי'},
+    {x:'אחרי שהשופט הכריז על התוצאה, מכל צד של המעגל'},
+    {x:'אחרי שהדיסקוס נגע בקרקע, מכל צד של המעגל'}],
+ e:'יציאה לפני שהכלי נגע בקרקע, או יציאה שלא דרך החצי האחורי (מאחורי הקו הלבן), היא ניסיון כושל. הכלל זהה בכדור, בדיסקוס ובפטיש.'},
+
+{id:'field-format',t:'s',
+ q:'בתחרות קפיצה לרוחק משתתפים 12 קופצים. מה מתכונת הניסיונות?',
+ o:[{x:'שלושה סיבובים לכולם. אחריהם שמונת הטובים מקבלים שלושה ניסיונות נוספים, בסדר הפוך לדירוג',c:1},
+    {x:'כל 12 הקופצים מקבלים שישה ניסיונות'},
+    {x:'שלושה סיבובים, ואחריהם שמונת הטובים ממשיכים בסדר המקורי שנקבע בהגרלה'},
+    {x:'שלושה סיבובים, ואחריהם רק שישה קופצים ממשיכים'}],
+ e:'כשיש יותר משמונה מתחרים, כל אחד מקבל שלושה ניסיונות, ושמונת הטובים (כולל שוויון על המקום השמיני) מקבלים שלושה נוספים. בסיבובים 4–5 הסדר הפוך לדירוג אחרי 3 סיבובים, ובסיבוב 6 הוא הפוך לדירוג אחרי 5 סיבובים.'},
+
+{id:'assistance',t:'m',
+ q:'אילו מהבאים נחשבים סיוע אסור לספורטאי במהלך התחרות? סמנו את כל התשובות הנכונות.',
+ o:[{x:'מכתיב קצב לרץ אדם שאינו משתתף במקצה, או רץ שכבר הוקף',c:1},
+    {x:'הספורטאי משתמש בטלפון נייד או במכשיר תקשורת בשטח התחרות',c:1},
+    {x:'הספורטאי עונד שעון דופק או מד מהירות-מרחק שאינו מאפשר תקשורת עם אדם אחר'},
+    {x:'הספורטאי מקבל עצות ממאמנו, שיושב באזור המאמנים המיועד, בלי להפריע לתחרות'},
+    {x:'צוות רפואי רשמי בודק את הספורטאי בשטח התחרות'}],
+ e:'הכתבת קצב בידי מי שאינו משתתף, או בידי רץ שהוקף, היא סיוע אסור. כך גם שימוש במכשירי תקשורת. מכשירים אישיים שאינם מתקשרים, עצות מאזור המאמנים ובדיקה של צוות רפואי רשמי מותרים.'},
+
+{id:'combined',t:'m',
+ q:'קרב רב: אילו מהמשפטים הבאים נכונים? סמנו את כל התשובות הנכונות.',
+ o:[{x:'סדר היום הראשון בקרב עשר: 100 מ\', קפיצה לרוחק, הדיפת כדור, קפיצה לגובה, 400 מ\'',c:1},
+    {x:'בקפיצה לרוחק ובכל הזריקות כל מתחרה מקבל שלושה ניסיונות בלבד',c:1},
+    {x:'בכל מקצה ריצה מותר זינוק פסול אחד ללא פסילה. מי שאחראי לזינוק פסול נוסף באותו מקצה נפסל',c:1},
+    {x:'מתחרה שלא התייצב לאחד המקצועות ממשיך בשאר המקצועות ומקבל אפס נקודות במקצוע שהחסיר'},
+    {x:'בקפיצה לגובה ובקפיצה במוט כל מתחרה מקבל חמישה ניסיונות בכל גובה'}],
+ e:'מתחרה שלא מתחיל אחד המקצועות נחשב כמי שפרש, ואינו רשאי להמשיך לשאר המקצועות. בקפיצות האנכיות הכללים רגילים: שלושה ניסיונות לכל גובה.'}
+];
+
+/* שמות קצרים לעמודת "נושאים לחיזוק" בגיליון */
+const TOPICS = {
+  'start-commands':'פקודות זינוק','false-start':'זינוק פסול','pole-vault':'קפיצה במוט','start-cards':'כרטיסי מזניק',
+  'finish':'סיום','hand-timing':'מדידת זמנים ידנית','wind-events':'מקצועות עם מדידת רוח','wind-legal':'רוח ושיאים',
+  'lane-straight':'ריצה במסלולים','relay-zone':'אזור החלפה','relay-4x400':'שליחים 4×400','hurdles-dq':'משוכות',
+  'steeple':'מכשולים','high-jump':'קפיצה לגובה','hj-countback':'שוויון בקפיצה לגובה','protest':'מחאות',
+  'lj-fouls':'כישלון בקפיצה לרוחק','lj-measure':'מדידה בקפיצה לרוחק','tj-phases':'קפיצה משולשת','shot-put':'הדיפת כדור',
+  'javelin':'כידון','leave-circle':'יציאה מהמעגל','field-format':'מתכונת ניסיונות','assistance':'סיוע אסור','combined':'קרב רב'
+};
+
+const view = document.getElementById('view');
+const bar = document.getElementById('bar');
+const state = { name:'', attempt:0, order:[], answers:{}, results:null, startedAt:0, save:'idle' };
+
+/* קריאה לשרת Apps Script. מחוץ ל-Apps Script (תצוגה מקומית) מחזיר null. */
+function server(fn, ...args){
+  if(!(window.google && google.script && google.script.run)) return Promise.resolve(null);
+  return new Promise((resolve,reject)=>google.script.run
+    .withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+/* ---------- intro ---------- */
+function renderIntro(){
+  bar.hidden = true;
+  const multi = QUESTIONS.filter(q=>q.t==='m').length;
+  view.innerHTML = `
+  <section class="panel stack">
+    <ul class="facts">
+      <li><b>${QUESTIONS.length}</b><span>שאלות, 4 נקודות לכל שאלה</span></li>
+      <li><b>${PASS_MARK}</b><span>ציון עובר, מתוך 100</span></li>
+      <li><b>${multi}</b><span>שאלות עם כמה תשובות נכונות</span></li>
+    </ul>
+    <div class="stack" style="gap:6px">
+      <p class="note">בשאלות עם תשובה אחת מסמנים אפשרות אחת. בשאלות שמסומנות "כמה תשובות נכונות" יש 2 או 3 תשובות נכונות. סימון חלקי מקבל ניקוד חלקי, וכל סימון שגוי מוריד מהניקוד של אותה שאלה.</p>
+      <p class="note">בסיום יוצגו הציון והתשובות הנכונות. מי שלא עובר יכול לגשת מיד לניסיון חוזר: אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.</p>
+    </div>
+    <form id="start-form" class="stack" style="gap:10px" novalidate>
+      <div>
+        <label class="field-label" for="student-name">שם מלא של הנבחן/ת</label>
+        <input type="text" id="student-name" autocomplete="name" value="${esc(state.name)}" placeholder="לדוגמה: נועה כהן">
+        <p class="err" id="name-err" hidden>יש להזין שם מלא כדי להתחיל.</p>
+      </div>
+      <div class="row"><button class="btn" type="submit">התחלת המבחן</button></div>
+    </form>
+  </section>`;
+  document.getElementById('start-form').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const n = document.getElementById('student-name').value.replace(/\s+/g,' ').trim();
+    if(n.length<2){ document.getElementById('name-err').hidden=false; return; }
+    const btn = e.target.querySelector('button');
+    btn.disabled = true; btn.textContent = 'טוען…';
+    state.name = n;
+    try { const next = await server('getNextAttempt', n); state.attempt = (next||1) - 1; }
+    catch(err){ state.attempt = 0; }
+    startAttempt();
+  });
+}
+
+/* ---------- exam ---------- */
+function startAttempt(){
+  state.attempt++;
+  state.answers = {};
+  state.results = null;
+  state.save = 'idle';
+  state.startedAt = Date.now();
+  state.order = shuffle(QUESTIONS).map(q=>({ q, opts: shuffle(q.o.map((o,i)=>({...o, id:q.id+'-'+i}))) }));
+  renderExam();
+  window.scrollTo({top:0});
+}
+
+function renderExam(){
+  const cards = state.order.map((it,idx)=>{
+    const {q,opts} = it, type = q.t==='m' ? 'checkbox' : 'radio';
+    const chosen = state.answers[q.id] || [];
+    return `<article class="q" id="q-${idx+1}">
+      <div class="q-head">
+        <span class="q-num">שאלה ${idx+1} מתוך ${state.order.length}</span>
+        <span class="chip ${q.t==='m'?'multi':''}">${q.t==='m'?'כמה תשובות נכונות':'תשובה אחת'}</span>
+      </div>
+      <div class="q-text"><p style="margin:0">${esc(q.q)}</p>${q.h||''}</div>
+      <div class="opts" role="${q.t==='m'?'group':'radiogroup'}">
+        ${opts.map((o,k)=>`<label class="opt" for="${o.id}">
+          <input type="${type}" id="${o.id}" name="${q.id}" value="${o.id}" ${chosen.includes(o.id)?'checked':''}>
+          <span class="let">${LETTERS[k]}.</span><span>${esc(o.x)}</span></label>`).join('')}
+      </div>
+    </article>`;
+  }).join('');
+  view.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <p class="note">נבחן/ת: <b style="color:var(--ink)">${esc(state.name)}</b> · ניסיון מס' ${state.attempt}</p>
+    </div>
+    <div class="stack">${cards}</div>`;
+  view.querySelectorAll('input').forEach(inp=>inp.addEventListener('change', ()=>{
+    const qid = inp.name;
+    state.answers[qid] = [...view.querySelectorAll(`input[name="${qid}"]:checked`)].map(x=>x.value);
+    updateBar();
+  }));
+  bar.hidden = false;
+  updateBar();
+}
+
+function answeredCount(){ return state.order.filter(it=>(state.answers[it.q.id]||[]).length).length; }
+
+function updateBar(confirming){
+  const n = answeredCount(), total = state.order.length;
+  const ticks = state.order.map((it,i)=>`<a href="#q-${i+1}" class="${(state.answers[it.q.id]||[]).length?'done':''}" aria-label="שאלה ${i+1}"></a>`).join('');
+  bar.innerHTML = `<div class="bar-in">
+    <div class="lane">${ticks}</div>
+    ${confirming ? `<div class="confirm"><span>נותרו ${total-n} שאלות ללא מענה. שאלה שלא נענתה מקבלת 0 נקודות.</span>
+        <button class="btn" type="button" id="force-submit">הגשה בכל זאת</button>
+        <button class="btn ghost" type="button" id="back">חזרה למבחן</button></div>`
+    : `<div class="bar-row"><span class="count">נענו ${n} מתוך ${total}</span>
+        <button class="btn" type="button" id="submit">הגשת המבחן</button></div>`}
+  </div>`;
+  bar.querySelectorAll('.lane a').forEach(a=>a.addEventListener('click',e=>{
+    e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth',block:'center'});
+  }));
+  if(confirming){
+    document.getElementById('force-submit').onclick = submit;
+    document.getElementById('back').onclick = ()=>{
+      updateBar();
+      const first = state.order.findIndex(it=>!(state.answers[it.q.id]||[]).length);
+      if(first>=0) document.getElementById('q-'+(first+1)).scrollIntoView({behavior:'smooth',block:'center'});
+    };
+  } else {
+    document.getElementById('submit').onclick = ()=> answeredCount()<total ? updateBar(true) : submit();
+  }
+}
+
+/* ---------- grading ---------- */
+function gradeOne(it){
+  const chosen = new Set(state.answers[it.q.id]||[]);
+  const correctIds = it.opts.filter(o=>o.c).map(o=>o.id);
+  let frac;
+  if(!chosen.size) frac = 0;
+  else if(it.q.t==='s') frac = chosen.has(correctIds[0]) ? 1 : 0;
+  else {
+    const hits = correctIds.filter(id=>chosen.has(id)).length;
+    const wrong = [...chosen].filter(id=>!correctIds.includes(id)).length;
+    frac = Math.max(0,(hits-wrong)/correctIds.length);
+  }
+  return { frac, chosen, answered: chosen.size>0 };
+}
+
+function submit(){
+  const per = state.order.map(it=>({it, ...gradeOne(it)}));
+  const raw = per.reduce((s,p)=>s+p.frac,0) * (100/state.order.length);
+  const score = Math.round(raw);
+  state.results = { per, score, passed: score>=PASS_MARK, date: new Date() };
+  renderResults();
+  window.scrollTo({top:0});
+  saveResult();
+}
+
+/* ---------- saving to the Google Sheet ---------- */
+async function saveResult(){
+  const {per,score} = state.results;
+  const payload = {
+    name: state.name, score,
+    full: per.filter(p=>p.frac===1).length,
+    part: per.filter(p=>p.frac>0&&p.frac<1).length,
+    zero: per.filter(p=>p.frac===0).length,
+    minutes: Math.max(1, Math.round((Date.now()-state.startedAt)/60000)),
+    weak: per.filter(p=>p.frac<1).map(p=>TOPICS[p.it.q.id]||p.it.q.id)
+  };
+  state.save = 'saving'; renderSave();
+  try {
+    const res = await server('saveResult', payload);
+    if(res && res.attempt && res.attempt!==state.attempt){ state.attempt = res.attempt; renderResults(); }
+    state.save = res ? 'saved' : 'local';
+  } catch(err){
+    state.save = 'error';
+  }
+  renderSave();
+}
+
+function renderSave(){
+  const box = document.getElementById('save-status');
+  if(!box) return;
+  const msg = {
+    saving:['', 'שומר את התוצאה בגיליון הריכוז…'],
+    saved:['ok','התוצאה נשמרה בגיליון הריכוז.'],
+    local:['', 'תצוגה מקומית: התוצאה לא נשמרה, כי הדף לא פועל מתוך Google.'],
+    error:['bad','השמירה בגיליון נכשלה. בדקו את החיבור לאינטרנט ונסו שוב.'],
+    idle:['', '']
+  }[state.save];
+  box.className = 'save ' + msg[0];
+  box.innerHTML = esc(msg[1]) + (state.save==='error' ? ' <button class="btn ghost" type="button" id="save-retry">שמירה חוזרת</button>' : '');
+  box.hidden = state.save==='idle';
+  if(state.save==='error') document.getElementById('save-retry').onclick = saveResult;
+}
+
+/* ---------- results ---------- */
+function renderResults(){
+  bar.hidden = true;
+  const {per,score,passed,date} = state.results;
+  const full = per.filter(p=>p.frac===1).length;
+  const part = per.filter(p=>p.frac>0&&p.frac<1).length;
+  const zero = per.length-full-part;
+  const ptsPer = 100/per.length;
+  const dateStr = date.toLocaleDateString('he-IL',{day:'numeric',month:'long',year:'numeric'});
+
+  const cert = passed ? `
+    <section class="cert" aria-label="אישור מעבר המבחן">
+      <div class="eyebrow">APPRENTICE LEVEL REFEREE</div>
+      <h2>אישור מעבר מבחן שופט מתלמד באתלטיקה קלה</h2>
+      <p class="note" style="margin-top:6px">מאושר בזה כי</p>
+      <div class="who">${esc(state.name)}</div>
+      <p class="note">עבר/ה בהצלחה את המבחן העיוני בחוקי התחרות ובחוקים הטכניים של World Athletics</p>
+      <dl>
+        <div><dt>ציון</dt><dd>${score}</dd></div>
+        <div><dt>ניסיון מס'</dt><dd>${state.attempt}</dd></div>
+        <div><dt>תאריך</dt><dd>${dateStr}</dd></div>
+      </dl>
+    </section>` : '';
+
+  const review = per.map((p,idx)=>{
+    const {it,frac,chosen,answered} = p;
+    const cls = frac===1?'full':frac>0?'part':'zero';
+    const label = frac===1?'נכון':frac>0?'חלקי':(answered?'שגוי':'לא נענתה');
+    const opts = it.opts.map((o,k)=>{
+      const sel = chosen.has(o.id);
+      let c='', mark='', tag='';
+      if(o.c && sel){c='hit';mark='✓';tag='סומנה, נכונה';}
+      else if(o.c){c='miss';mark='✓';tag='נכונה, לא סומנה';}
+      else if(sel){c='wrong';mark='✗';tag='סומנה, שגויה';}
+      return `<div class="ropt ${c}"><span class="mark" aria-hidden="true">${mark||LETTERS[k]}</span>
+        <span>${esc(o.x)}</span><span class="tag">${tag}</span></div>`;
+    }).join('');
+    return `<article class="q r-${cls}">
+      <div class="q-head">
+        <span class="q-num">שאלה ${idx+1}</span>
+        <span class="row" style="gap:8px"><span class="pts">${fmt(frac*ptsPer)} / ${fmt(ptsPer)} נק'</span><span class="st ${cls}">${label}</span></span>
+      </div>
+      <div class="q-text"><p style="margin:0">${esc(it.q.q)}</p>${it.q.h||''}</div>
+      <div class="opts">${opts}</div>
+      <p class="explain"><b>הסבר: </b>${esc(it.q.e)}</p>
+    </article>`;
+  }).join('');
+
+  view.innerHTML = `
+  <div class="stack">
+    <section class="panel score">
+      <div class="score-num">${score}<small> / 100</small></div>
+      <div class="stack" style="gap:6px">
+        <div class="row"><span class="verdict ${passed?'pass':'fail'}">${passed?'עבר/ה':'לא עבר/ה'}</span>
+          <span class="note">${esc(state.name)} · ניסיון מס' ${state.attempt} · ציון עובר: ${PASS_MARK}</span></div>
+        <ul class="tally">
+          <li><b>${full}</b> נכונות</li><li><b>${part}</b> חלקיות</li><li><b>${zero}</b> שגויות או ללא מענה</li>
+        </ul>
+        <div class="save" id="save-status" role="status" hidden></div>
+        ${passed ? '' : `<p class="note">כדאי לעבור על ההסברים למטה. בניסיון החוזר יופיעו אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.</p>
+          <div class="row"><button class="btn" type="button" id="retry">ניסיון חוזר</button></div>`}
+      </div>
+    </section>
+    ${cert}
+    <div class="review-head"><h2 style="font-size:24px">פירוט התשובות</h2>
+      <span class="note">✓ ירוק מלא: סומנה ונכונה · ✓ במסגרת מקווקוות: נכונה שלא סומנה · ✗ אדום: סומנה ושגויה</span></div>
+    <div class="stack">${review}</div>
+    ${passed ? '' : `<div class="row"><button class="btn" type="button" id="retry2">ניסיון חוזר</button></div>`}
+  </div>`;
+  if(!passed){
+    document.getElementById('retry').onclick = startAttempt;
+    document.getElementById('retry2').onclick = startAttempt;
+  }
+  renderSave();
+}
+function fmt(n){ return (Math.round(n*10)/10).toString(); }
+
+renderIntro();
+</script>
+</body>
+</html>
