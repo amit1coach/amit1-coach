@@ -139,6 +139,11 @@ input[type=text]{width:100%;font:inherit;padding:10px 12px;border:1px solid var(
 .save.ok{background:var(--ok-bg);color:var(--ok)}
 .save.bad{background:var(--bad-bg);color:var(--bad)}
 .btn:disabled{opacity:.6;cursor:wait}
+.tbl{overflow-x:auto;max-width:100%}
+.q-text td{font-variant-numeric:tabular-nums}
+.ids{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+@media (max-width:520px){.ids{grid-template-columns:1fr}}
+.site-foot{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center}
 </style>
 </head>
 <body>
@@ -148,9 +153,10 @@ input[type=text]{width:100%;font:inherit;padding:10px 12px;border:1px solid var(
   <header>
     <div class="eyebrow">APPRENTICE LEVEL REFEREE · ATHLETICS</div>
     <h1>מבחן שופט מתלמד באתלטיקה קלה</h1>
-    <p>חוקי התחרות והחוקים הטכניים של World Athletics: ריצות, משוכות, שליחים, קפיצות, זריקות וקרב רב.</p>
+    <p>חוקי התחרות והחוקים הטכניים של World Athletics: ריצות, משוכות, שליחים, קפיצות ומקצועות הזריקה.</p>
   </header>
   <main id="view"></main>
+  <footer class="site-foot">© כל הזכויות שמורות לעמית נאמן</footer>
 </div>
 <div class="bar" id="bar" hidden></div>
 
@@ -172,12 +178,12 @@ const QUESTIONS = [
  e:'בכל הריצות עד 400 מ\' כולל, ובקטע הראשון של שליחים 4×200, 4×400 ושליחים מעורבים, הפקודות הן "למקומות" ו"היכון". הזינוק מכריעה ובמכשירי זינוק. בריצות ארוכות מ-400 מ\' נותנים רק "למקומות", והזינוק מעמידה.'},
 
 {id:'false-start',t:'s',
- q:'בגמר 100 מ\' (לא במסגרת קרב רב) רץ זינק לפני הירייה, ומערכת בקרת הזינוק אישרה זאת. מה ההחלטה?',
+ q:'בגמר 100 מ\' רץ זינק לפני הירייה, ומערכת בקרת הזינוק אישרה זאת. מה ההחלטה?',
  o:[{x:'הרץ האחראי לזינוק הפסול נפסל מיד',c:1},
     {x:'הרץ מקבל אזהרה, וזינוק פסול נוסף שלו יגרום לפסילתו'},
     {x:'כל הרצים מקבלים אזהרה, והרץ הבא שיזנק זינוק פסול ייפסל'},
     {x:'הרץ מועבר למסלול החיצוני והמקצה מתחיל מחדש'}],
- e:'בתחרויות רגילות כל רץ שאחראי לזינוק פסול נפסל, כבר בזינוק הפסול הראשון. החריג הוא קרב רב, שבו מותר זינוק פסול אחד בכל מקצה.'},
+ e:'כל רץ שאחראי לזינוק פסול נפסל, כבר בזינוק הפסול הראשון. אין אזהרה מוקדמת.'},
 
 {id:'pole-vault',t:'m',
  q:'קפיצה במוט: אילו מהמקרים הבאים נרשמים כניסיון כושל? סמנו את כל התשובות הנכונות.',
@@ -191,9 +197,9 @@ const QUESTIONS = [
  q:'אילו מההתאמות הבאות בין כרטיס המזניק למשמעותו נכונות? סמנו את כל התשובות הנכונות.',
  o:[{x:'כרטיס ירוק: לא נרשם זינוק פסול לרץ',c:1},
     {x:'כרטיס חצוי באלכסון אדום/שחור: הרץ נפסל בשל זינוק פסול',c:1},
-    {x:'כרטיס חצוי באלכסון צהוב/שחור: אזהרה לרץ שאחראי לזינוק הפסול הראשון במקצה של קרב רב',c:1},
+    {x:'כרטיס חצוי באלכסון אדום/שחור: אזהרה בלבד, והרץ ייפסל רק בזינוק פסול שני'},
     {x:'כרטיס חצוי באלכסון צהוב/שחור: אזהרה כללית לכל רצי המקצה אחרי זינוק פסול ראשון בריצה אישית'}],
- e:'האזהרה הכללית לכל הרצים אחרי זינוק פסול ראשון בוטלה לפני שנים רבות. היום, בתחרות רגילה, הרץ האחראי נפסל מיד (אדום/שחור). צהוב/שחור משמש רק בקרב רב.'},
+ e:'האזהרה הכללית לכל הרצים אחרי זינוק פסול ראשון בוטלה לפני שנים רבות. היום הרץ האחראי לזינוק פסול נפסל מיד, ומוצג לו כרטיס אדום/שחור. כרטיס ירוק מסמן שלא נרשם לרץ זינוק פסול.'},
 
 {id:'finish',t:'s',
  q:'סדר ההגעה לסיום נקבע לפי הרגע שבו ___ של הרץ מגיע למישור האנכי של הקצה הקרוב של קו הסיום.',
@@ -240,7 +246,7 @@ const QUESTIONS = [
 {id:'relay-4x400',t:'m',
  q:'שליחים 4×400 מ\': אילו מהמשפטים הבאים נכונים? סמנו את כל התשובות הנכונות.',
  o:[{x:'הקטע הראשון נרוץ כולו במסלולים',c:1},
-    {x:'הרץ השני רץ במסלולו עד קו ההתפרקות שאחרי העקומה הראשונה',c:1},
+    {x:'הרץ השני רץ במסלולו עד קו השבירה שאחרי העקומה הראשונה',c:1},
     {x:'אם המקל נפל, הרץ שהפיל אותו חייב להרים אותו. מותר לו לצאת ממסלולו לשם כך, בתנאי שאינו מקצר את המרחק ואינו מפריע לאחרים',c:1},
     {x:'מותר לזרוק את המקל לרץ הבא, אם הוא נתפס בתוך אזור ההחלפה'},
     {x:'מותר ללבוש כפפות כדי לשפר את האחיזה במקל'}],
@@ -272,15 +278,17 @@ const QUESTIONS = [
  e:'הקופץ רשאי לוותר על כל גובה. מי שנכשל פעמיים יכול לעבור לגובה הבא עם ניסיון אחד שנותר לו. שלושה כישלונות רצופים מוציאים מהתחרות (למעט קפיצת הכרעה על המקום הראשון).'},
 
 {id:'hj-countback',t:'s',
- q:'קפיצה לגובה. O = הצלחה, X = כישלון. מי מדורג גבוה יותר?',
- h:'<table><tr><th></th><th>1.80</th><th>1.85</th><th>1.88</th></tr>'+
-   '<tr><th>קופץ א\'</th><td><span class="mono">O</span></td><td><span class="mono">XO</span></td><td><span class="mono">XXX</span></td></tr>'+
-   '<tr><th>קופץ ב\'</th><td><span class="mono">XO</span></td><td><span class="mono">O</span></td><td><span class="mono">XXX</span></td></tr></table>',
- o:[{x:'קופץ ב\', כי הצליח במספר ניסיונות קטן יותר בגובה 1.85',c:1},
-    {x:'קופץ א\', כי הצליח בגובה 1.80 בניסיון הראשון'},
-    {x:'תיקו, ושניהם מדורגים באותו מקום'},
-    {x:'קופץ א\', כי יש לו פחות כישלונות בסך הכול'}],
- e:'שניהם עברו 1.85. הקריטריון הראשון: פחות קפיצות בגובה שבו נוצר השוויון (1.85). לקופץ ב\' קפיצה אחת ולקופץ א\' שתיים, לכן ב\' לפני א\'. רק אם עדיין יש שוויון בודקים את סך הכישלונות. גם שם הם שווים כאן: ארבעה לכל אחד.'},
+ q:'קפיצה לגובה, ארבעה מתחרים. O = הצלחה, X = כישלון, תא ריק = המתחרה כבר הודח. מהו הדירוג הסופי?',
+ h:'<div class="tbl"><table><tr><th></th><th>1.80</th><th>1.85</th><th>1.88</th><th>1.91</th></tr>'+
+   '<tr><th>א\'</th><td><span class="mono">O</span></td><td><span class="mono">XO</span></td><td><span class="mono">XXX</span></td><td></td></tr>'+
+   '<tr><th>ב\'</th><td><span class="mono">XO</span></td><td><span class="mono">O</span></td><td><span class="mono">XXX</span></td><td></td></tr>'+
+   '<tr><th>ג\'</th><td><span class="mono">O</span></td><td><span class="mono">O</span></td><td><span class="mono">XO</span></td><td><span class="mono">XXX</span></td></tr>'+
+   '<tr><th>ד\'</th><td><span class="mono">XXO</span></td><td><span class="mono">XO</span></td><td><span class="mono">XXX</span></td><td></td></tr></table></div>',
+ o:[{x:'ראשון: ג\'. שני: ב\'. שלישי: א\'. רביעי: ד\'',c:1},
+    {x:'ראשון: ג\'. שני: א\'. שלישי: ב\'. רביעי: ד\''},
+    {x:'ראשון: ג\'. שני: ב\'. שלישי: ד\'. רביעי: א\''},
+    {x:'ראשון: ג\'. א\' וב\' בתיקו במקום השני. רביעי: ד\''}],
+ e:'ג\' ראשון, כי רק הוא עבר 1.88. א\', ב\' וד\' עברו כולם 1.85. הקריטריון הראשון: פחות קפיצות בגובה שבו נוצר השוויון (1.85). לב\' קפיצה אחת, ולא\' ולד\' שתיים כל אחד, לכן ב\' שני. בין א\' לד\' מכריע הקריטריון השני: פחות כישלונות בכל התחרות, עד הגובה האחרון שעברו (1.85) כולל. לא\' כישלון אחד, ולד\' שלושה. לכן א\' שלישי וד\' רביעי.'},
 
 {id:'protest',t:'s',
  q:'קופץ לרוחק סבור שתוצאתו נרשמה בטעות. מהי הדרך הנכונה להגיש מחאה?',
@@ -307,25 +315,30 @@ const QUESTIONS = [
     {x:'מהסימן הרחוק ביותר בבור ועד קו הניתור'}],
  e:'המדידה היא מהסימן הקרוב ביותר שהשאיר הגוף (או דבר שהיה מחובר לגוף) בבור, אל קו הניתור או המשכו, בניצב לקו. לא מודדים מנקודת הניתור בפועל.'},
 
-{id:'tj-phases',t:'s',
- q:'מהו הרצף הנכון של שלבי הקפיצה המשולשת?',
- o:[{x:'דילוג: נחיתה על רגל הניתור. צעד: נחיתה על הרגל השנייה. ניתור: נחיתה בבור',c:1},
-    {x:'דילוג: נחיתה על הרגל השנייה. צעד: נחיתה על רגל הניתור. ניתור: נחיתה בבור'},
-    {x:'צעד: נחיתה על רגל הניתור. דילוג: נחיתה על הרגל השנייה. ניתור: נחיתה בבור'},
-    {x:'כל רצף מותר, בתנאי שיש שלוש נחיתות'}],
- e:'בדילוג נוחתים על אותה רגל שניתרו ממנה, בצעד על הרגל השנייה, ואחריו בא הניתור לבור. נגיעה מקרית של "הרגל הרדומה" בקרקע אינה כישלון.'},
+{id:'lj-ranking',t:'s',
+ q:'קפיצה לרוחק, ארבעה מתחרים, שישה סיבובים. התוצאות במטרים. X = כישלון, – = ויתור על הניסיון. מהו הדירוג הסופי?',
+ h:'<div class="tbl"><table><tr><th></th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th></tr>'+
+   '<tr><th>א\'</th><td>6.45</td><td><span class="mono">X</span></td><td>6.52</td><td>6.30</td><td><span class="mono">X</span></td><td>6.40</td></tr>'+
+   '<tr><th>ב\'</th><td>6.52</td><td>6.38</td><td><span class="mono">X</span></td><td>6.41</td><td>6.20</td><td><span class="mono">X</span></td></tr>'+
+   '<tr><th>ג\'</th><td><span class="mono">X</span></td><td>6.48</td><td>6.50</td><td><span class="mono">X</span></td><td>6.49</td><td>6.33</td></tr>'+
+   '<tr><th>ד\'</th><td>6.30</td><td>6.55</td><td><span class="mono">X</span></td><td><span class="mono">X</span></td><td><span class="mono">–</span></td><td><span class="mono">X</span></td></tr></table></div>',
+ o:[{x:'ראשון: ד\'. שני: א\'. שלישי: ב\'. רביעי: ג\'',c:1},
+    {x:'ראשון: ד\'. שני: ב\'. שלישי: א\'. רביעי: ג\''},
+    {x:'ראשון: ד\'. א\' וב\' בתיקו במקום השני. רביעי: ג\''},
+    {x:'ראשון: א\'. שני: ב\'. שלישי: ג\'. רביעי: ד\''}],
+ e:'הדירוג נקבע לפי התוצאה הטובה ביותר, ולכן ד\' ראשון עם 6.55. מספר הניסיונות הכושלים לא משנה. א\' וב\' שווים ב-6.52, ולכן מכריעה התוצאה השנייה בטיבה: 6.45 של א\' מול 6.41 של ב\'. לכן א\' שני וב\' שלישי. לא משנה מי השיג את 6.52 קודם. ג\' רביעי עם 6.50.'},
 
 {id:'shot-put',t:'m',
- q:'הדיפת כדור: אילו מהמשפטים הבאים נכונים? סמנו את כל התשובות הנכונות.',
+ q:'הדיפת כדור ברזל: אילו מהמשפטים הבאים נכונים? סמנו את כל התשובות הנכונות.',
  o:[{x:'הכדור נהדף מהכתף ביד אחת. בתחילת הניסיון הוא נוגע בצוואר או בסנטר או קרוב אליהם, והיד אינה יורדת מתחת למצב זה במהלך ההדיפה',c:1},
-    {x:'מותר לגעת בצד הפנימי של לוח העצירה במהלך הניסיון',c:1},
-    {x:'נגיעה בחלק העליון של לוח העצירה במהלך הניסיון היא ניסיון כושל',c:1},
+    {x:'מותר לגעת בצד הפנימי של המפתן במהלך הניסיון',c:1},
+    {x:'נגיעה בחלק העליון של המפתן במהלך הניסיון היא ניסיון כושל',c:1},
     {x:'אחרי נחיתת הכדור יש לצאת מהמעגל דרך חציו הקדמי'},
     {x:'מותר ללבוש כפפות'}],
- e:'יוצאים מהמעגל רק דרך החצי האחורי, ורק אחרי שהכדור נגע בקרקע. בהדיפת כדור אסור ללבוש כפפות. בזריקות המעגל, כפפות מותרות רק בזריקת פטיש.'},
+ e:'יוצאים מהמעגל רק דרך החצי האחורי, ורק אחרי שהכדור נגע בקרקע. בהדיפת כדור ברזל אסור ללבוש כפפות. במקצועות המעגל, כפפות מותרות רק בזריקת פטיש.'},
 
 {id:'javelin',t:'s',
- q:'מתי זריקת כידון חוקית מבחינת נחיתת הכידון?',
+ q:'מתי הטלת כידון חוקית מבחינת נחיתת הכידון?',
  o:[{x:'ראש המתכת פוגע בקרקע לפני כל חלק אחר של הכידון, והכידון נוחת בתוך הקצוות הפנימיים של קווי הגזרה',c:1},
     {x:'הכידון ננעץ בקרקע ונשאר נעוץ'},
     {x:'כל חלק של הכידון יכול לפגוע ראשון בקרקע, בתנאי שהכידון נחת בתוך הגזרה'},
@@ -338,7 +351,7 @@ const QUESTIONS = [
     {x:'מיד עם שחרור הדיסקוס, דרך החצי הקדמי'},
     {x:'אחרי שהשופט הכריז על התוצאה, מכל צד של המעגל'},
     {x:'אחרי שהדיסקוס נגע בקרקע, מכל צד של המעגל'}],
- e:'יציאה לפני שהכלי נגע בקרקע, או יציאה שלא דרך החצי האחורי (מאחורי הקו הלבן), היא ניסיון כושל. הכלל זהה בכדור, בדיסקוס ובפטיש.'},
+ e:'יציאה לפני שהכלי נגע בקרקע, או יציאה שלא דרך החצי האחורי (מאחורי הקו הלבן), היא ניסיון כושל. הכלל זהה בכדור ברזל, בדיסקוס ובפטיש.'},
 
 {id:'field-format',t:'s',
  q:'בתחרות קפיצה לרוחק משתתפים 12 קופצים. מה מתכונת הניסיונות?',
@@ -357,14 +370,13 @@ const QUESTIONS = [
     {x:'צוות רפואי רשמי בודק את הספורטאי בשטח התחרות'}],
  e:'הכתבת קצב בידי מי שאינו משתתף, או בידי רץ שהוקף, היא סיוע אסור. כך גם שימוש במכשירי תקשורת. מכשירים אישיים שאינם מתקשרים, עצות מאזור המאמנים ובדיקה של צוות רפואי רשמי מותרים.'},
 
-{id:'combined',t:'m',
- q:'קרב רב: אילו מהמשפטים הבאים נכונים? סמנו את כל התשובות הנכונות.',
- o:[{x:'סדר היום הראשון בקרב עשר: 100 מ\', קפיצה לרוחק, הדיפת כדור, קפיצה לגובה, 400 מ\'',c:1},
-    {x:'בקפיצה לרוחק ובכל הזריקות כל מתחרה מקבל שלושה ניסיונות בלבד',c:1},
-    {x:'בכל מקצה ריצה מותר זינוק פסול אחד ללא פסילה. מי שאחראי לזינוק פסול נוסף באותו מקצה נפסל',c:1},
-    {x:'מתחרה שלא התייצב לאחד המקצועות ממשיך בשאר המקצועות ומקבל אפס נקודות במקצוע שהחסיר'},
-    {x:'בקפיצה לגובה ובקפיצה במוט כל מתחרה מקבל חמישה ניסיונות בכל גובה'}],
- e:'מתחרה שלא מתחיל אחד המקצועות נחשב כמי שפרש, ואינו רשאי להמשיך לשאר המקצועות. בקפיצות האנכיות הכללים רגילים: שלושה ניסיונות לכל גובה.'}
+{id:'umpire',t:'s',
+ q:'אתם משמשים שופט מסלול (Umpire) בעקומה בריצת 200 מ\'. ראיתם רץ דורך על הקו הפנימי של מסלולו. מה עליכם לעשות?',
+ o:[{x:'לסמן את מקום ההפרה, להרים דגל צהוב ולדווח בכתב לשופט הראשי (Referee), שהוא המחליט',c:1},
+    {x:'להודיע לרץ מיד אחרי קו הסיום שהוא נפסל'},
+    {x:'לעצור את המקצה בשריקה, כדי שיתחיל מחדש'},
+    {x:'לא לעשות דבר, כי רק שופט הווידאו רשאי לטפל בהפרות מסלול'}],
+ e:'שופט מסלול לא מחליט על פסילה. תפקידו לסמן את מקום ההפרה, להרים דגל צהוב ולהגיש דיווח כתוב לשופט הראשי, שמקבל את ההחלטה.'}
 ];
 
 /* שמות קצרים לעמודת "נושאים לחיזוק" בגיליון */
@@ -372,14 +384,14 @@ const TOPICS = {
   'start-commands':'פקודות זינוק','false-start':'זינוק פסול','pole-vault':'קפיצה במוט','start-cards':'כרטיסי מזניק',
   'finish':'סיום','hand-timing':'מדידת זמנים ידנית','wind-events':'מקצועות עם מדידת רוח','wind-legal':'רוח ושיאים',
   'lane-straight':'ריצה במסלולים','relay-zone':'אזור החלפה','relay-4x400':'שליחים 4×400','hurdles-dq':'משוכות',
-  'steeple':'מכשולים','high-jump':'קפיצה לגובה','hj-countback':'שוויון בקפיצה לגובה','protest':'מחאות',
-  'lj-fouls':'כישלון בקפיצה לרוחק','lj-measure':'מדידה בקפיצה לרוחק','tj-phases':'קפיצה משולשת','shot-put':'הדיפת כדור',
-  'javelin':'כידון','leave-circle':'יציאה מהמעגל','field-format':'מתכונת ניסיונות','assistance':'סיוע אסור','combined':'קרב רב'
+  'steeple':'מכשולים','high-jump':'קפיצה לגובה','hj-countback':'דירוג בקפיצה לגובה','protest':'מחאות',
+  'lj-fouls':'כישלון בקפיצה לרוחק','lj-measure':'מדידה בקפיצה לרוחק','lj-ranking':'דירוג בקפיצה לרוחק','shot-put':'הדיפת כדור ברזל',
+  'javelin':'הטלת כידון','leave-circle':'יציאה מהמעגל','field-format':'מתכונת ניסיונות','assistance':'סיוע אסור','umpire':'תפקיד שופט מסלול'
 };
 
 const view = document.getElementById('view');
 const bar = document.getElementById('bar');
-const state = { name:'', attempt:0, order:[], answers:{}, results:null, startedAt:0, save:'idle' };
+const state = { name:'', id:'', attempt:0, order:[], answers:{}, results:null, startedAt:0, save:'idle' };
 
 /* קריאה לשרת Apps Script. מחוץ ל-Apps Script (תצוגה מקומית) מחזיר null. */
 function server(fn, ...args){
@@ -389,6 +401,14 @@ function server(fn, ...args){
 }
 
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+/* ת.ז. ישראלית: ספרות בלבד, משלימים לאפסים מובילים עד 9, ובודקים את ספרת הביקורת */
+function normId(v){ const d = String(v||'').replace(/\D/g,''); return d && d.length<=9 ? d.padStart(9,'0') : d; }
+function validId(id){
+  if(!/^\d{9}$/.test(id) || /^0+$/.test(id)) return false;
+  let sum = 0;
+  for(let i=0;i<9;i++){ let x = Number(id[i]) * (i%2 ? 2 : 1); sum += x>9 ? x-9 : x; }
+  return sum % 10 === 0;
+}
 function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 
 /* ---------- intro ---------- */
@@ -407,10 +427,17 @@ function renderIntro(){
       <p class="note">בסיום יוצגו הציון והתשובות הנכונות. מי שלא עובר יכול לגשת מיד לניסיון חוזר: אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.</p>
     </div>
     <form id="start-form" class="stack" style="gap:10px" novalidate>
-      <div>
-        <label class="field-label" for="student-name">שם מלא של הנבחן/ת</label>
-        <input type="text" id="student-name" autocomplete="name" value="${esc(state.name)}" placeholder="לדוגמה: נועה כהן">
-        <p class="err" id="name-err" hidden>יש להזין שם מלא כדי להתחיל.</p>
+      <div class="ids">
+        <div>
+          <label class="field-label" for="student-name">שם מלא של הנבחן/ת</label>
+          <input type="text" id="student-name" autocomplete="name" value="${esc(state.name)}" placeholder="לדוגמה: נועה כהן">
+          <p class="err" id="name-err" hidden>יש להזין שם מלא.</p>
+        </div>
+        <div>
+          <label class="field-label" for="student-id">מספר ת.ז.</label>
+          <input type="text" id="student-id" inputmode="numeric" autocomplete="off" maxlength="9" dir="ltr" value="${esc(state.id)}" placeholder="9 ספרות">
+          <p class="err" id="id-err" hidden>מספר ת.ז. לא תקין. יש להזין 9 ספרות, כולל ספרת הביקורת.</p>
+        </div>
       </div>
       <div class="row"><button class="btn" type="submit">התחלת המבחן</button></div>
     </form>
@@ -418,11 +445,15 @@ function renderIntro(){
   document.getElementById('start-form').addEventListener('submit', async e=>{
     e.preventDefault();
     const n = document.getElementById('student-name').value.replace(/\s+/g,' ').trim();
-    if(n.length<2){ document.getElementById('name-err').hidden=false; return; }
+    const id = normId(document.getElementById('student-id').value);
+    const nameOk = n.length>=2, idOk = validId(id);
+    document.getElementById('name-err').hidden = nameOk;
+    document.getElementById('id-err').hidden = idOk;
+    if(!nameOk || !idOk) return;
     const btn = e.target.querySelector('button');
     btn.disabled = true; btn.textContent = 'טוען…';
-    state.name = n;
-    try { const next = await server('getNextAttempt', n); state.attempt = (next||1) - 1; }
+    state.name = n; state.id = id;
+    try { const next = await server('getNextAttempt', id); state.attempt = (next||1) - 1; }
     catch(err){ state.attempt = 0; }
     startAttempt();
   });
@@ -459,7 +490,7 @@ function renderExam(){
   }).join('');
   view.innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
-      <p class="note">נבחן/ת: <b style="color:var(--ink)">${esc(state.name)}</b> · ניסיון מס' ${state.attempt}</p>
+      <p class="note">נבחן/ת: <b style="color:var(--ink)">${esc(state.name)}</b> · ת.ז. <span dir="ltr">${esc(state.id)}</span> · ניסיון מס' ${state.attempt}</p>
     </div>
     <div class="stack">${cards}</div>`;
   view.querySelectorAll('input').forEach(inp=>inp.addEventListener('change', ()=>{
@@ -528,7 +559,7 @@ function submit(){
 async function saveResult(){
   const {per,score} = state.results;
   const payload = {
-    name: state.name, score,
+    name: state.name, id: state.id, score,
     full: per.filter(p=>p.frac===1).length,
     part: per.filter(p=>p.frac>0&&p.frac<1).length,
     zero: per.filter(p=>p.frac===0).length,
