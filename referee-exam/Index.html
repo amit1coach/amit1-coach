@@ -141,8 +141,6 @@ input[type=text]{width:100%;font:inherit;padding:10px 12px;border:1px solid var(
 .btn:disabled{opacity:.6;cursor:wait}
 .tbl{overflow-x:auto;max-width:100%}
 .q-text td{font-variant-numeric:tabular-nums}
-.ids{display:grid;grid-template-columns:2fr 1fr;gap:12px}
-@media (max-width:520px){.ids{grid-template-columns:1fr}}
 .site-foot{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center}
 </style>
 </head>
@@ -391,7 +389,7 @@ const TOPICS = {
 
 const view = document.getElementById('view');
 const bar = document.getElementById('bar');
-const state = { name:'', id:'', attempt:0, order:[], answers:{}, results:null, startedAt:0, save:'idle' };
+const state = { name:'', attempt:0, order:[], answers:{}, results:null, startedAt:0, save:'idle' };
 
 /* קריאה לשרת Apps Script. מחוץ ל-Apps Script (תצוגה מקומית) מחזיר null. */
 function server(fn, ...args){
@@ -401,14 +399,6 @@ function server(fn, ...args){
 }
 
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
-/* ת.ז. ישראלית: ספרות בלבד, משלימים לאפסים מובילים עד 9, ובודקים את ספרת הביקורת */
-function normId(v){ const d = String(v||'').replace(/\D/g,''); return d && d.length<=9 ? d.padStart(9,'0') : d; }
-function validId(id){
-  if(!/^\d{9}$/.test(id) || /^0+$/.test(id)) return false;
-  let sum = 0;
-  for(let i=0;i<9;i++){ let x = Number(id[i]) * (i%2 ? 2 : 1); sum += x>9 ? x-9 : x; }
-  return sum % 10 === 0;
-}
 function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 
 /* ---------- intro ---------- */
@@ -427,17 +417,10 @@ function renderIntro(){
       <p class="note">בסיום יוצגו הציון והתשובות הנכונות. מי שלא עובר יכול לגשת מיד לניסיון חוזר: אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.</p>
     </div>
     <form id="start-form" class="stack" style="gap:10px" novalidate>
-      <div class="ids">
-        <div>
-          <label class="field-label" for="student-name">שם מלא של הנבחן/ת</label>
-          <input type="text" id="student-name" autocomplete="name" value="${esc(state.name)}" placeholder="לדוגמה: נועה כהן">
-          <p class="err" id="name-err" hidden>יש להזין שם מלא.</p>
-        </div>
-        <div>
-          <label class="field-label" for="student-id">מספר ת.ז.</label>
-          <input type="text" id="student-id" inputmode="numeric" autocomplete="off" maxlength="9" dir="ltr" value="${esc(state.id)}" placeholder="9 ספרות">
-          <p class="err" id="id-err" hidden>מספר ת.ז. לא תקין. יש להזין 9 ספרות, כולל ספרת הביקורת.</p>
-        </div>
+      <div>
+        <label class="field-label" for="student-name">שם מלא של הנבחן/ת</label>
+        <input type="text" id="student-name" autocomplete="name" value="${esc(state.name)}" placeholder="לדוגמה: נועה כהן">
+        <p class="err" id="name-err" hidden>יש להזין שם מלא כדי להתחיל.</p>
       </div>
       <div class="row"><button class="btn" type="submit">התחלת המבחן</button></div>
     </form>
@@ -445,15 +428,11 @@ function renderIntro(){
   document.getElementById('start-form').addEventListener('submit', async e=>{
     e.preventDefault();
     const n = document.getElementById('student-name').value.replace(/\s+/g,' ').trim();
-    const id = normId(document.getElementById('student-id').value);
-    const nameOk = n.length>=2, idOk = validId(id);
-    document.getElementById('name-err').hidden = nameOk;
-    document.getElementById('id-err').hidden = idOk;
-    if(!nameOk || !idOk) return;
+    if(n.length<2){ document.getElementById('name-err').hidden=false; return; }
     const btn = e.target.querySelector('button');
     btn.disabled = true; btn.textContent = 'טוען…';
-    state.name = n; state.id = id;
-    try { const next = await server('getNextAttempt', id); state.attempt = (next||1) - 1; }
+    state.name = n;
+    try { const next = await server('getNextAttempt', n); state.attempt = (next||1) - 1; }
     catch(err){ state.attempt = 0; }
     startAttempt();
   });
@@ -490,7 +469,7 @@ function renderExam(){
   }).join('');
   view.innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
-      <p class="note">נבחן/ת: <b style="color:var(--ink)">${esc(state.name)}</b> · ת.ז. <span dir="ltr">${esc(state.id)}</span> · ניסיון מס' ${state.attempt}</p>
+      <p class="note">נבחן/ת: <b style="color:var(--ink)">${esc(state.name)}</b> · ניסיון מס' ${state.attempt}</p>
     </div>
     <div class="stack">${cards}</div>`;
   view.querySelectorAll('input').forEach(inp=>inp.addEventListener('change', ()=>{
@@ -559,7 +538,7 @@ function submit(){
 async function saveResult(){
   const {per,score} = state.results;
   const payload = {
-    name: state.name, id: state.id, score,
+    name: state.name, score,
     full: per.filter(p=>p.frac===1).length,
     part: per.filter(p=>p.frac>0&&p.frac<1).length,
     zero: per.filter(p=>p.frac===0).length,
