@@ -453,6 +453,18 @@ const Avatar = ({name,sex,size=38}) => {
 };
 const StatCard = ({label,value,accent}) =>
   h("div",{className:"sc"},h("div",{className:"sl"},label),h("div",{className:"sv",style:{color:accent||"var(--text)"}},value));
+// Weekly km done out of planned, with a thin progress bar (green once the plan is met)
+const WeeklyKmCard = ({done, planned}) => {
+  const pct = planned>0 ? Math.min(100, done/planned*100) : 0;
+  return h("div",{className:"sc"},
+    h("div",{className:"sl"},"Weekly KMs"),
+    h("div",{className:"sv"},
+      h("span",{style:{color:done>0?"var(--success-text)":"var(--text)"}},done>0?Math.round(done):"0"),
+      h("span",{style:{fontSize:15,fontWeight:600,color:"var(--text-muted2)"}}," of "+(planned>0?Math.round(planned):"–")+" km")),
+    planned>0&&h("div",{style:{height:5,borderRadius:3,background:"var(--border)",marginTop:8,overflow:"hidden"}},
+      h("div",{style:{width:pct+"%",height:"100%",borderRadius:3,background:pct>=100?"var(--success)":"var(--accent)",transition:"width .3s"}}))
+  );
+};
 const Toast = ({msg,ok}) =>
   h("div",{className:"toast",style:{background:ok?"var(--success-bg)":"var(--danger-bg)",color:ok?"var(--success-text)":"var(--danger-text)",border:`0.5px solid ${ok?"var(--success)":"var(--danger)"}`}},msg);
 const Spinner = () => h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",padding:"3rem"}},h("div",{className:"spin"}));
@@ -3072,8 +3084,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
     ),
     h(RaceCountdown,{athleteId:athlete.id,groupId:athlete.groupId,refresh:plan}),
     h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
-      h(StatCard,{label:"Weekly volume",value:totalKm?Math.round(totalKm)+" km":"–"}),
-      h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
+      h(WeeklyKmCard,{done:actualKm,planned:totalKm}),
       h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
     ),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"4px 8px",borderBottom:"0.5px solid var(--border)",marginBottom:14}},
@@ -3269,7 +3280,7 @@ const AthleteHome = ({user,onSignOut}) => {
     h(RaceCountdown,{athleteId:user.uid,groupId:profile.groupId}),
     weekOff===0&&!loading&&h(TodayCard,{plan,reports,athleteName:profile.name,onReport:saveReport,comments}),
     h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
-      h(StatCard,{label:"Weekly KMs done",value:actualKm>0?Math.round(actualKm)+" km":"–",accent:actualKm>0?"var(--success-text)":undefined}),
+      h(WeeklyKmCard,{done:actualKm,planned:DAYS.reduce((s,d)=>s+dayTotalKm(plan[d]),0)}),
       h(StatCard,{label:"Days done",value:dDays.length+" / "+wDays.length})
     ),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"4px 8px",borderBottom:"0.5px solid var(--border)",marginBottom:14}},
