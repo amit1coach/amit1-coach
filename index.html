@@ -264,7 +264,8 @@ const normalizePart = p => {
     _showKm:!!(p.distance||p._showKm),
     ...(hillRows ? {hillRows: Array.isArray(hillRows) ? hillRows : Object.values(hillRows)} : {}),
     ...(wktRows ? {wktRows: Array.isArray(wktRows) ? wktRows : Object.values(wktRows)} : {}),
-    ...(p.wktPattern==="sequential"||p.wktPattern==="grouped" ? {wktPattern:p.wktPattern} : {})
+    ...(p.wktPattern==="sequential"||p.wktPattern==="grouped" ? {wktPattern:p.wktPattern} : {}),
+    ...(p.wktRec&&typeof p.wktRec==="object" ? {wktRec:p.wktRec} : {})
   };
 };
 const normalizeSess = s => {
@@ -397,7 +398,17 @@ const wktGroups = (rows, pattern) => {
   valid.forEach((r,i)=>{ if(i>0&&r.mix) groups[groups.length-1].push(r); else groups.push([r]); });
   return groups;
 };
-const expandWktRows = (rows, pattern="alternate") => {
+// Optional recovery put between every two steps of a part (part.wktRec = {value, mode:"time"|"meters"}), so a
+// pyramid like 3-4-5-4-3 min with 2 min between is five rows, not nine. Never after the last step.
+const wktRecStep = rec => {
+  if (!rec) return null;
+  if (rec.mode==="meters") { const m=parseFloat(rec.value)||0; return m>0 ? {label:"",durationType:"distance",meters:m} : null; }
+  const min=parseMin(rec.value); return min>0 ? {label:"",durationType:"time",minutes:min} : null;
+};
+// In a fartlek the parts between efforts are steady running, not rest
+const wktRecWord = part => part.type==="fartlek" ? "steady" : "rec";
+const wktRecText = rec => { const s=wktRecStep(rec); return !s ? "" : s.durationType==="time" ? fmtMin(s.minutes)+"min" : s.meters+"m"; };
+const expandWktRows = (rows, pattern="alternate", rec=null) => {
   const steps=[];
   wktGroups(rows, pattern).forEach(group=>{
     const pools = group.map(r=>({...r, remaining:wktRowReps(r)}));
@@ -409,13 +420,14 @@ const expandWktRows = (rows, pattern="alternate") => {
       }
     }
   });
-  return steps;
+  const recStep = wktRecStep(rec);
+  return recStep ? steps.flatMap((s,i)=>i ? [{...recStep}, s] : [s]) : steps;
 };
 // Time and Lap rows cover an unknown distance, so the coach can give an estimate (estKm, for the whole
 // row, all reps) — it counts toward the part's planned km. Distance rows are exact and never need one.
 const wktRowEstKm = r => (r.mode==="time"||r.mode==="lap") ? (parseFloat(r.estKm)||0) : 0;
-const wktTotals = (rows, pattern) => {
-  const expanded = expandWktRows(rows, pattern);
+const wktTotals = (rows, pattern, rec=null) => {
+  const expanded = expandWktRows(rows, pattern, rec);
   const min = expanded.reduce((t,s)=>t+(s.durationType==="time"?s.minutes:0),0);
   const exactKm = expanded.reduce((t,s)=>t+(s.durationType==="distance"?s.meters/1000:0),0);
   const estKm = wktValidRows(rows).reduce((t,r)=>t+wktRowEstKm(r),0);
@@ -427,7 +439,7 @@ const wktRowsSummary = part => {
   const expanded = expandWktRows(getWktRows(part), pattern);
   if(!expanded.length) return null;
   const groups = wktGroups(getWktRows(part), pattern);
-  const {min:totalMin, km:totalKm, est} = wktTotals(getWktRows(part), pattern);
+  const {min:totalMin, km:totalKm, est} = wktTotals(getWktRows(part), pattern, part.wktRec);
   // A Rec row also attaches to the preceding step with " / " instead of " → ".
   const isRec = wktIsRec;
   const estStr = r => wktRowEstKm(r)>0 ? " ≈"+wktRowEstKm(r)+"km" : "";
@@ -442,7 +454,8 @@ const wktRowsSummary = part => {
   if (valid.length===1 && wktRowReps(valid[0])===1) return label(valid[0]);
   const totals = [totalMin>0?fmtMin(totalMin)+" min":null, totalKm>0?(est?"≈":"")+totalKm.toFixed(1)+" km":null].filter(Boolean).join(" · ");
   const body = groups.map((g,i)=>(i===0?"":isRec(g[0])?" / ":" → ")+g.map(label).join(" / ")).join("");
-  return body+(totals?" · "+totals+" total":"");
+  const recStr = expanded.length>1 && wktRecText(part.wktRec) ? ", "+wktRecText(part.wktRec)+" "+wktRecWord(part)+" between" : "";
+  return body+recStr+(totals?" · "+totals+" total":"");
 };
 
 
@@ -607,7 +620,12 @@ const WktRows = ({part, onChange}) => {
   // Keep part.distance (the number sessTotalKm actually sums) in sync with the rows,
   // the same way HillPlanRows does — otherwise the day/session "Total KMs" header can
   // silently drift from what the rows below compute.
-  const kmOf = rs => wktTotals(rs, pattern).km;
+  const kmOf = rs => wktTotals(rs, pattern, part.wktRec).km;
+  const rec = part.wktRec || {value:"", mode:"time"};
+  const setRec = patch => {
+    const nr = {...rec, ...patch};
+    onChange({...part, wktRec:nr, distance:wktTotals(rows, pattern, nr).km.toFixed(3)});
+  };
   const update = (i,k,v) => {
     const nr=rows.map((r,idx)=>idx===i?{...r,[k]:v}:r);
     onChange({...part, wktRows:nr, distance:kmOf(nr).toFixed(3)});
@@ -620,7 +638,7 @@ const WktRows = ({part, onChange}) => {
     const nr=rows.filter((_,idx)=>idx!==i);
     onChange({...part, wktRows:nr, distance:kmOf(nr).toFixed(3)});
   };
-  const {expanded, min:totalMin, km:totalKm, est} = wktTotals(rows, pattern);
+  const {expanded, min:totalMin, km:totalKm, est} = wktTotals(rows, pattern, part.wktRec);
   return h("div",{style:{marginTop:6}},
     h("div",{style:{display:"flex",gap:6,marginBottom:8}},
       WKT_PATTERNS.map(([k,label])=>h("button",{key:k,onClick:()=>onChange({...part,wktPattern:k}),style:{padding:"3px 9px",fontSize:11,fontWeight:600,borderRadius:4,cursor:"pointer",
@@ -666,6 +684,17 @@ const WktRows = ({part, onChange}) => {
         "km for this row (estimate, counts toward planned total)"
       )
     )),
+    h("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",fontSize:11,color:"var(--text-muted2)",margin:"6px 0 2px",padding:"6px 8px",background:"var(--surface-alt)",borderRadius:5}},
+      h("span",{style:{fontWeight:600}},(part.type==="fartlek"?"Steady running":"Recovery")+" between every step:"),
+      rec.mode==="meters"
+        ? h("input",{type:"number",value:rec.value||"",onChange:e=>setRec({value:e.target.value}),placeholder:"200",style:{width:60,padding:"3px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}})
+        : h("input",{type:"text",inputMode:"decimal",value:rec.value||"",onChange:e=>setRec({value:e.target.value.replace(/[^0-9:.]/g,"")}),placeholder:"2 or 1:30",style:{width:70,padding:"3px 6px",fontSize:12,fontFamily:"'DM Mono',monospace"}}),
+      h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)"}},
+        [["time","min"],["meters","m"]].map(([m,lbl])=>h("button",{key:m,onClick:()=>setRec({mode:m,value:""}),
+          style:{padding:"3px 8px",fontSize:11,fontWeight:600,border:"none",cursor:"pointer",background:rec.mode===m?"var(--accent)":"var(--surface)",color:rec.mode===m?"var(--accent-text)":"var(--text-muted)"}},lbl))
+      ),
+      h("span",{style:{fontSize:10,color:"var(--text-muted)"}},"leave empty for none · not after the last step")
+    ),
     h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}},
       h("button",{onClick:addRow,className:"btn btns",style:{fontSize:11}},"+ Add row"),
       (totalMin>0||totalKm>0)&&h("span",{style:{fontSize:11,fontWeight:700,color:"var(--text)",fontFamily:"monospace"}},
@@ -684,7 +713,7 @@ const simplifyPart = p => {
   if (!SIMPLE_TYPES.includes(p.type) || !getWktRows(p).length) return p;
   const valid = wktValidRows(getWktRows(p));
   if (valid.length>1 || (valid.length===1 && !isPlainRow(valid[0]))) return p;
-  const {wktRows, wktPattern, _structured, ...rest} = p;
+  const {wktRows, wktPattern, wktRec, _structured, ...rest} = p;
   const r = valid[0];
   if (!r) return rest; // only empty rows
   if (r.mode==="time") return {...rest, mode:"time", duration:String(r.value), distance:r.estKm?String(r.estKm):"", _showKm:!!r.estKm};
@@ -698,13 +727,13 @@ const PartEditor = ({part,onChange,onRemove,onDuplicate,index,total}) => {
   const isSimple = canBeSimple && !part._structured && getWktRows(part).length===0;
   const isWkt = !isHills && !isSimple;
   // Back to a plain part: the rows go, the km they added up to stays in "Total KMs"
-  const removeSteps = () => { const {wktRows, wktPattern, _structured, ...rest} = part; onChange(rest); };
+  const removeSteps = () => { const {wktRows, wktPattern, wktRec, _structured, ...rest} = part; onChange(rest); };
   const isTime = !isHills && part.mode==="time";
   return h("div",{style:{display:"flex",alignItems:"flex-start",gap:6,marginBottom:6,padding:"8px 10px",borderRadius:6,background:"var(--surface)",border:`0.5px solid ${wt.color}44`,borderLeft:`3px solid ${wt.color}`}},
     h("div",{style:{flex:1}},
       h("div",{className:"row",style:{marginBottom:5,flexWrap:"wrap"}},
         h("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-muted)",minWidth:50}},"Part "+(index+1)),
-        h("select",{value:part.type,onChange:e=>{const {hillRows,wktRows,wktPattern,_structured,...rest}=part; onChange({...rest,type:e.target.value,distance:"",mode:e.target.value==="hills"?"distance":part.mode});},style:{width:"auto",fontSize:12,fontWeight:600,color:wt.dark,padding:"3px 6px",border:"0.5px solid var(--border-strong)",borderRadius:4}},
+        h("select",{value:part.type,onChange:e=>{const {hillRows,wktRows,wktPattern,wktRec,_structured,...rest}=part; onChange({...rest,type:e.target.value,distance:"",mode:e.target.value==="hills"?"distance":part.mode});},style:{width:"auto",fontSize:12,fontWeight:600,color:wt.dark,padding:"3px 6px",border:"0.5px solid var(--border-strong)",borderRadius:4}},
           Object.entries(WT).filter(([k])=>k!=="rest").map(([k,v])=>h("option",{key:k,value:k},v.label))
         ),
         !isHills&&h("div",{style:{display:"flex",borderRadius:4,overflow:"hidden",border:"0.5px solid var(--border-strong)"}},
@@ -1063,7 +1092,7 @@ const encodeFitWorkout = (name, steps) => {
 const partToFitStep = part => {
   const wt=WT[part.type]||WT.easy;
   const wktRows=wktValidRows(getWktRows(part));
-  if(part.type!=="hills"&&wktRows.length>0) return expandWktRows(wktRows, wktPatternOf(part));
+  if(part.type!=="hills"&&wktRows.length>0) return expandWktRows(wktRows, wktPatternOf(part), part.wktRec);
   const label=(part.notes||wt.label).slice(0,15);
   if(part.type==="hills"){
     const hillSteps=expandHillRows(getHillRows(part));
