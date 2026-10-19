@@ -1591,6 +1591,77 @@ const WellbeingFields = ({sleep,setSleep,stress,setStress,showMissing}) =>
     )
   );
 
+// ── Unplanned workouts ───────────────────────────────────────────────────────
+// A run (or other session) the athlete did that wasn't in the plan, on any day including rest days.
+// Stored on that day's report as extra:[{id,type,km,duration,pace,effort,hr,notes}]. Counts toward the
+// km done, but not toward "Days done" / sessions done, which measure following the plan.
+const extrasOf = r => Array.isArray(r?.extra) ? r.extra : [];
+const extraKm = r => extrasOf(r).reduce((s,x)=>s+(parseFloat(x.km)||0),0);
+const extraText = x => [
+  parseFloat(x.km)>0 ? fmtKm(parseFloat(x.km))+" km" : null,
+  parseMin(x.duration)>0 ? fmtMin(parseMin(x.duration))+" min" : null,
+  x.pace ? "@ "+x.pace+"/km" : null,
+  x.effort ? "effort "+x.effort+"/10" : null,
+  x.hr ? x.hr+" bpm" : null,
+].filter(Boolean).join(" · ");
+const extraKey = (day, x) => sessKey(day, "x"+x.id);
+// Only days that have already started can get an unplanned workout
+const dayHasStarted = (weekOff, day) => { const d=getWeekStart(weekOff); d.setDate(d.getDate()+DAYS_IDX[day]); return d<=new Date(); };
+
+const ExtraWorkoutForm = ({day, initial, onSave, onDelete, onCancel}) => {
+  const [f, setF] = useState(()=>initial||{type:"easy", km:"", duration:"", pace:"", effort:"", hr:"", notes:""});
+  const [tried, setTried] = useState(false);
+  const s = (k,v) => setF(p=>({...p,[k]:v}));
+  const wt = WT[f.type]||WT.easy;
+  const ok = parseFloat(f.km)>0 || parseMin(f.duration)>0;
+  return h("div",null,
+    h("div",{style:{marginBottom:12,fontSize:13,color:"var(--text-muted)"}},"A workout on "+day+" that wasn't in your plan. It counts toward your weekly km."),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10},className:"gr2"},
+      h("div",null,h("label",{className:"lbl"},"Type"),
+        h("select",{value:f.type,onChange:e=>s("type",e.target.value),style:{color:wt.dark,fontWeight:600}},
+          Object.entries(WT).filter(([k])=>k!=="rest").map(([k,v])=>h("option",{key:k,value:k},v.label)))),
+      h("div",null,h("label",{className:"lbl"},"Distance (km)"),
+        h("input",{type:"number",step:"0.1",value:f.km,onChange:e=>s("km",e.target.value),placeholder:"e.g. 8",className:"mono"})),
+      h("div",null,h("label",{className:"lbl"},"Time (min) — optional"),
+        h("input",{type:"text",inputMode:"decimal",value:f.duration,onChange:e=>s("duration",e.target.value.replace(/[^0-9:.]/g,"")),placeholder:"e.g. 45",className:"mono"})),
+      h("div",null,h("label",{className:"lbl"},"Pace (mm:ss) — optional"),
+        h("input",{value:f.pace,onChange:e=>s("pace",e.target.value),placeholder:"e.g. 5:30",className:"mono"})),
+      h("div",null,h("label",{className:"lbl"},"Avg HR (bpm) — optional"),
+        h("input",{type:"number",value:f.hr,onChange:e=>s("hr",e.target.value),placeholder:"e.g. 145",className:"vague"}))
+    ),
+    h("div",{style:{marginBottom:10}},h(TapScale,{label:"Effort",value:f.effort,onChange:v=>s("effort",v),max:10,colors:[wt.color],leftLabel:"Easy",rightLabel:"Max"})),
+    h("div",{style:{marginBottom:10}},h("label",{className:"lbl"},"Notes"),
+      h("textarea",{value:f.notes,onChange:e=>s("notes",e.target.value),rows:2,placeholder:"e.g. ran with the club, felt good"})),
+    tried&&!ok&&h("div",{style:{fontSize:12,color:"var(--danger-text)",textAlign:"right",marginBottom:6}},"Please enter a distance or a time."),
+    h("div",{style:{display:"flex",gap:8,justifyContent:"space-between",marginTop:8}},
+      onDelete ? h("button",{className:"btnd",onClick:()=>{ if(window.confirm("Delete this unplanned workout?")) onDelete(); }},"Delete") : h("div"),
+      h("div",{style:{display:"flex",gap:8}},
+        h("button",{className:"btn",onClick:onCancel},"Cancel"),
+        h("button",{className:"btnp",onClick:()=>{ if(!ok){setTried(true);return;} onSave({...f, id:f.id||String(Date.now())}); }},"Save")
+      )
+    )
+  );
+};
+
+// Saving: the day's report keeps everything else and gets the new list of unplanned workouts
+const withExtra = (rep, x) => { const xs=extrasOf(rep); const i=xs.findIndex(e=>e.id===x.id); return {...(rep||{}), extra:i>=0 ? xs.map(e=>e.id===x.id?x:e) : [...xs, x]}; };
+const withoutExtra = (rep, id) => ({...(rep||{}), extra:extrasOf(rep).filter(e=>e.id!==id)});
+
+// Read-only line for one unplanned workout, with its comment thread
+const ExtraWorkoutRow = ({day, x, comments, athleteName, onEdit}) => {
+  const wt = WT[x.type]||WT.easy;
+  return h("div",{style:{padding:"8px 10px",borderRadius:8,border:"0.5px dashed var(--border-strong)",background:"var(--surface)",marginTop:8}},
+    h("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
+      h("span",{className:"stb",style:{background:"var(--info-bg)",color:"var(--info-text)"}},"Unplanned"),
+      h("span",{className:"wtb",style:{background:wt.bg,color:wt.dark,fontSize:11}},wt.label),
+      h("span",{className:"mono",style:{fontSize:12,color:"var(--text)"}},extraText(x)),
+      onEdit&&h("button",{className:"btn btns",onClick:onEdit,style:{marginLeft:"auto",fontSize:11,padding:"3px 9px"}},"Edit")
+    ),
+    x.notes&&h("div",{style:{fontSize:12,color:"var(--text-muted2)",marginTop:4,fontStyle:"italic"}},'"'+x.notes+'"'),
+    h(CommentThread,{c:comments,k:extraKey(day,x),athleteName})
+  );
+};
+
 // Rest days have no sessions, so this only records how the athlete slept/feels
 const RestDayForm = ({day,existingReport,onSave,onCancel}) => {
   const [sleep,setSleep]=useState(existingReport?.sleep||"");
@@ -1659,7 +1730,7 @@ const ReportForm = ({day,daySessions,existingReport,onSave,onCancel}) => {
       h("button",{className:"btn",onClick:onCancel},"Cancel"),
       h("button",{className:"btnp",onClick:()=>{
         if(missing.length){setTried(true);return;}
-        onSave({sessions:reps,sleep,stress,totalKm:totalKm.toFixed(1)});
+        onSave({...(extrasOf(existingReport).length?{extra:extrasOf(existingReport)}:{}),sessions:reps,sleep,stress,totalKm:totalKm.toFixed(1)});
       }},"Submit report")
     )
   );
@@ -2021,6 +2092,7 @@ const NewCommentChip = ({label="💬 New"}) => h("span",{className:"stb",style:{
 // Today's workout, big and first, with Report right on it. Uses the current week's plan and reports.
 const TodayCard = ({plan, reports, athleteName, onReport, comments}) => {
   const [open, setOpen] = useState(false);
+  const [extraEdit, setExtraEdit] = useState(null); // {x} — x is null when adding
   const day = todayShort(), d = plan[day], r = reports[day];
   const hasPlan = Object.keys(plan||{}).length>0;
   const isRest = dayIsRest(d);
@@ -2084,10 +2156,19 @@ const TodayCard = ({plan, reports, athleteName, onReport, comments}) => {
     hasPlan&&h("button",{className:reported?"btn":"btnp",onClick:()=>setOpen(true),
         style:{width:"100%",justifyContent:"center",marginTop:14,padding:"11px 16px",fontSize:15,fontWeight:600}},
       isRest ? (reported?"Edit sleep & stress":"😴 Log sleep & stress") : (reported?"Edit today's report":"Report today's training")),
+    // Unplanned workouts today (e.g. a run on a rest day), and a way to add one
+    extrasOf(r).map(x=>h(ExtraWorkoutRow,{key:x.id,day,x,comments,athleteName,onEdit:()=>setExtraEdit({day,x})})),
+    h("button",{className:"btn btns",onClick:()=>setExtraEdit({day,x:null}),title:"Log a workout you did that wasn't in the plan",
+      style:{width:"100%",justifyContent:"center",marginTop:8,fontSize:12,color:"var(--info-text)"}},"+ Unplanned workout"),
     open&&h(Modal,{title:(isRest?"Rest day — ":"Report — ")+day,onClose:()=>setOpen(false),wide:true},
       isRest
         ? h(RestDayForm,{day,existingReport:r,onCancel:()=>setOpen(false),onSave:save})
         : h(ReportForm,{day,daySessions:sessions,existingReport:r,onCancel:()=>setOpen(false),onSave:save})
+    ),
+    extraEdit&&h(Modal,{title:(extraEdit.x?"Unplanned workout — ":"Add unplanned workout — ")+day,onClose:()=>setExtraEdit(null),wide:true},
+      h(ExtraWorkoutForm,{day,initial:extraEdit.x,onCancel:()=>setExtraEdit(null),
+        onSave:x=>{onReport(day,withExtra(r,x));setExtraEdit(null);},
+        onDelete:extraEdit.x?()=>{onReport(day,withoutExtra(r,extraEdit.x.id));setExtraEdit(null);}:null})
     )
   );
 };
@@ -2095,6 +2176,7 @@ const TodayCard = ({plan, reports, athleteName, onReport, comments}) => {
 const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin,athleteName,comments}) => {
   const [editPlan,setEditPlan]=useState(false);
   const [repDay,setRepDay]=useState(null);
+  const [extraEdit,setExtraEdit]=useState(null); // {day, x} — x is null when adding a new unplanned workout
 
   const renderSessions = (day) => {
     try {
@@ -2167,12 +2249,15 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
           daysWithNew(comments).includes(day)&&h(NewCommentChip),
           !isRest&&r?.sessions&&h("span",{className:"stb",style:{background:"var(--success-bg)",color:"var(--success-text)"}},"Reported"),
           !isCoach&&!isRest&&h("button",{className:"btn btns",onClick:()=>setRepDay(day)},r?.sessions?"Edit":"Report"),
-          !isCoach&&isRest&&h("button",{className:"btn btns",style:{fontSize:11},onClick:()=>setRepDay(day)},r?.sleep?"Edit":"😴 Log sleep & stress")
+          !isCoach&&isRest&&h("button",{className:"btn btns",style:{fontSize:11},onClick:()=>setRepDay(day)},r?.sleep?"Edit":"😴 Log sleep & stress"),
+          !isCoach&&dayHasStarted(weekOff,day)&&h("button",{className:"btn btns",title:"Log a workout you did that wasn't in the plan",onClick:()=>setExtraEdit({day,x:null}),style:{fontSize:11,color:"var(--info-text)"}},"+ Unplanned")
         )
       ),
       // Comments under each reported session, full width of the day card so they stay readable on a phone
       !isRest&&comments&&sessions.map((sess,si)=>r?.sessions?.[si]&&h("div",{key:"cm"+si,style:{marginLeft:42}},
-        h(CommentThread,{c:comments,k:sessKey(day,si),athleteName,title:sessions.length>1?"Session "+(si+1):null})))
+        h(CommentThread,{c:comments,k:sessKey(day,si),athleteName,title:sessions.length>1?"Session "+(si+1):null}))),
+      // Unplanned workouts logged on this day (rest days too)
+      extrasOf(r).length>0&&h("div",{style:{marginLeft:42}},extrasOf(r).map(x=>h(ExtraWorkoutRow,{key:x.id,day,x,comments,athleteName,onEdit:isCoach?null:()=>setExtraEdit({day,x})})))
     );
     } catch(e) {
       console.error("Error rendering day",day,e);
@@ -2189,16 +2274,23 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
       dayIsRest(plan[repDay])
         ? h(RestDayForm,{day:repDay,existingReport:reports[repDay],onCancel:()=>setRepDay(null),onSave:r=>{onReport(repDay,r);setRepDay(null);}})
         : h(ReportForm,{day:repDay,daySessions:plan[repDay]?.sessions||[],existingReport:reports[repDay],onCancel:()=>setRepDay(null),onSave:r=>{onReport(repDay,r);setRepDay(null);}})
+    ),
+    extraEdit&&h(Modal,{title:(extraEdit.x?"Unplanned workout — ":"Add unplanned workout — ")+extraEdit.day,onClose:()=>setExtraEdit(null),wide:true},
+      h(ExtraWorkoutForm,{day:extraEdit.day,initial:extraEdit.x,onCancel:()=>setExtraEdit(null),
+        onSave:x=>{onReport(extraEdit.day,withExtra(reports[extraEdit.day],x));setExtraEdit(null);},
+        onDelete:extraEdit.x?()=>{onReport(extraEdit.day,withoutExtra(reports[extraEdit.day],extraEdit.x.id));setExtraEdit(null);}:null})
     )
   );
 };
 
 // ── Athlete Detail (coach view) ───────────────────────────────────────────────
-// Real daily total: main session(s) + warm-up + cool-down, matching what the athlete sees as "Total" in their report
+// Real daily total: main session(s) + warm-up + cool-down (what the athlete sees as "Total" in their report),
+// plus any unplanned workouts logged that day
 const dayActualKm = r => {
-  if (!r?.sessions) return 0;
-  if (r.totalKm!=null && r.totalKm!=="") return parseFloat(r.totalKm)||0;
-  return r.sessions.reduce((s,rep)=>s+(parseFloat(rep.actualDistance)||0)+(parseFloat(rep.wu)||0)+(parseFloat(rep.cd)||0),0);
+  const extra = extraKm(r);
+  if (!r?.sessions) return extra;
+  if (r.totalKm!=null && r.totalKm!=="") return (parseFloat(r.totalKm)||0)+extra;
+  return r.sessions.reduce((s,rep)=>s+(parseFloat(rep.actualDistance)||0)+(parseFloat(rep.wu)||0)+(parseFloat(rep.cd)||0),0)+extra;
 };
 
 // forDrive: no auto-print, CSS vars inlined and stat boxes as a table so the Google Docs import keeps the layout
@@ -2211,6 +2303,11 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false,
     const k=sessKey(day,si), t=threadOf(comments,k), msgs=msgsOf(comments,k);
     if(!t.reaction&&!msgs.length) return "";
     return `<tr><td></td><td colspan="7" style="font-size:12px">💬 ${sessions.length>1?`Session ${si+1}: `:""}${t.reaction?t.reaction.emoji+" ":""}${fmtMsgs(msgs)}</td></tr>`;
+  }).join("");
+  const extraRows = (day, r) => extrasOf(r).map(x=>{
+    const k=extraKey(day,x), t=threadOf(comments,k), msgs=msgsOf(comments,k);
+    const talk = t.reaction||msgs.length ? ` &nbsp;💬 ${t.reaction?t.reaction.emoji+" ":""}${fmtMsgs(msgs)}` : "";
+    return `<tr><td></td><td colspan="7" style="font-size:12px">➕ <b>Unplanned ${esc((WT[x.type]||WT.easy).label)}:</b> ${esc(extraText(x))}${x.notes?` · <i>"${esc(x.notes)}"</i>`:""}${talk}</td></tr>`;
   }).join("");
   const weekMsgs = msgsOf(comments, WEEK_THREAD);
   const weekNoteHtml = weekMsgs.length ? `<div style="background:var(--surface-alt);border-left:3px solid var(--accent);border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:13px"><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Coach's note for the week</div>${fmtMsgs(weekMsgs)}</div>` : "";
@@ -2231,7 +2328,7 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false,
 
   const dayRows = DAYS.map(day=>{
     const d=plan[day]; const r=reports[day];
-    if(dayIsRest(d)) return `<tr><td><b>${day}</b></td><td colspan="6" style="color:var(--text-muted)">Rest / Off</td><td>${r?.sleep||r?.stress?`😴${r.sleep?r.sleep+"/5":"–"} ${r.stress?stressEmoji(r.stress):"🧠"}${r.stress?r.stress+"/5":"–"}`:""}</td></tr>`;
+    if(dayIsRest(d)) return `<tr><td><b>${day}</b></td><td colspan="6" style="color:var(--text-muted)">Rest / Off</td><td>${r?.sleep||r?.stress?`😴${r.sleep?r.sleep+"/5":"–"} ${r.stress?stressEmoji(r.stress):"🧠"}${r.stress?r.stress+"/5":"–"}`:""}</td></tr>${extraRows(day,r)}`;
     const sessions=(d?.sessions||[]);
     const plannedKm = dayTotalKm(d).toFixed(1);
     const actualKm = r?.sessions ? dayActualKm(r).toFixed(1) : "–";
@@ -2274,7 +2371,7 @@ const buildWeeklySummaryHtml = (athlete, plan, reports, weekOff, forDrive=false,
       <td>${effort}</td>
       <td style="font-family:monospace">${perf}</td>
       <td>😴${sleep} ${stressIcon}${stress}</td>
-    </tr>${notesList.map(({i,n})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">${sessions.length>1?`Session ${i+1}: `:""}"${n}"</td></tr>`).join("")}${garminList.map(({i,groups})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-size:12px">${sessions.length>1?`<b>Session ${i+1} Garmin laps:</b> `:"<b>Garmin laps:</b> "}${groups.map(g=>`${g.label}: ${formatGroupStats(g)}`).join(" &nbsp;·&nbsp; ")}</td></tr>`).join("")}${commentRows(day,sessions)}`;
+    </tr>${notesList.map(({i,n})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-style:italic;font-size:12px">${sessions.length>1?`Session ${i+1}: `:""}"${n}"</td></tr>`).join("")}${garminList.map(({i,groups})=>`<tr><td></td><td colspan="7" style="color:var(--text-muted2);font-size:12px">${sessions.length>1?`<b>Session ${i+1} Garmin laps:</b> `:"<b>Garmin laps:</b> "}${groups.map(g=>`${g.label}: ${formatGroupStats(g)}`).join(" &nbsp;·&nbsp; ")}</td></tr>`).join("")}${commentRows(day,sessions)}${extraRows(day,r)}`;
   }).join("");
 
   const boxes = [
@@ -3138,13 +3235,15 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
     !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:athlete.name,comments}),
     !loading&&tab==="plan"&&h("div",{style:{marginTop:14}},h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:true})),
     !loading&&tab==="reports"&&h("div",null,
-      DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
+      // Planned training days, plus rest days with an unplanned workout
+      DAYS.filter(d=>!dayIsRest(plan[d])||extrasOf(reports[d]).length).map(day=>{
         const d=plan[day],r=reports[day],sessions=d?.sessions||[];
         return h("div",{key:day,style:{border:"0.5px solid var(--border)",borderRadius:10,padding:"12px 14px",marginBottom:8,background:r?"var(--surface)":"var(--surface-alt)"}},
           h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:r?12:0}},
             h("div",{style:{display:"flex",alignItems:"center",gap:8}},
               h("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.06em"}},day),
-              sessions.map((sess,si)=>{const wt=WT[sessFirstType(sess)]||WT.easy;return h("span",{key:si,className:"wtb",style:{background:wt.bg,color:wt.dark,fontSize:11}},wt.label+(sessions.length>1?" ("+(si+1)+")":""));})
+              sessions.map((sess,si)=>{const wt=WT[sessFirstType(sess)]||WT.easy;return h("span",{key:si,className:"wtb",style:{background:wt.bg,color:wt.dark,fontSize:11}},wt.label+(sessions.length>1?" ("+(si+1)+")":""));}),
+              dayIsRest(d)&&h("span",{style:{fontSize:12,color:"var(--text-muted)"}},"Rest day")
             ),
             !r&&h("span",{style:{fontSize:12,color:"var(--border-strong)"}},"No report")
           ),
@@ -3191,10 +3290,12 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
               h(CommentThread,{c:comments,k:sessKey(day,si),athleteName:athlete.name}),
               si<sessions.length-1&&h("div",{style:{borderTop:"0.5px dashed var(--border)",marginTop:12}})
             );
-          })
+          }),
+          // Unplanned workouts that day (rest days too)
+          extrasOf(r).map(x=>h(ExtraWorkoutRow,{key:"x"+x.id,day,x,comments,athleteName:athlete.name}))
         );
       }),
-      !DAYS.some(d=>!dayIsRest(plan[d]))&&h("div",{style:{textAlign:"center",padding:"3rem",color:"var(--text-muted)",fontSize:14}},"No workouts planned this week.")
+      !DAYS.some(d=>!dayIsRest(plan[d])||extrasOf(reports[d]).length)&&h("div",{style:{textAlign:"center",padding:"3rem",color:"var(--text-muted)",fontSize:14}},"No workouts planned this week.")
     ),
     editPlan&&h(Modal,{title:"Edit plan — "+weekLabel(weekOff),onClose:()=>setEditPlan(false),wide:true},
       h(PlanEditor,{plan,onCancel:()=>setEditPlan(false),onSave:savePlan})
@@ -3329,13 +3430,15 @@ const AthleteHome = ({user,onSignOut}) => {
     !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:false,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:profile.name,comments}),
     !loading&&tab==="plan"&&h("div",{style:{marginTop:14}},h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:false,onSave:saveWeight})),
     !loading&&tab==="reports"&&h("div",null,
-      DAYS.filter(d=>!dayIsRest(plan[d])).map(day=>{
+      // Planned training days, plus rest days with an unplanned workout
+      DAYS.filter(d=>!dayIsRest(plan[d])||extrasOf(reports[d]).length).map(day=>{
         const d=plan[day],r=reports[day],sessions=d?.sessions||[];
         return h("div",{key:day,style:{border:"0.5px solid var(--border)",borderRadius:10,padding:"12px 14px",marginBottom:8,background:r?"var(--surface)":"var(--surface-alt)"}},
           h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:r?8:0}},
             h("div",{style:{display:"flex",alignItems:"center",gap:8}},
               h("span",{style:{fontSize:10,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.06em"}},day),
-              sessions.map((sess,si)=>{const wt=WT[sessFirstType(sess)]||WT.easy;return h("span",{key:si,className:"wtb",style:{background:wt.bg,color:wt.dark,fontSize:11}},wt.label);})
+              sessions.map((sess,si)=>{const wt=WT[sessFirstType(sess)]||WT.easy;return h("span",{key:si,className:"wtb",style:{background:wt.bg,color:wt.dark,fontSize:11}},wt.label);}),
+              dayIsRest(d)&&h("span",{style:{fontSize:12,color:"var(--text-muted)"}},"Rest day")
             ),
             r?h("span",{className:"stb",style:{background:"var(--success-bg)",color:"var(--success-text)"}},"✓ Reported"):h("span",{style:{fontSize:12,color:"var(--border-strong)"}},"No report yet")
           ),
@@ -3372,10 +3475,12 @@ const AthleteHome = ({user,onSignOut}) => {
               ),
               h("div",{key:"cm",style:{gridColumn:"1/-1"}},h(CommentThread,{c:comments,k:sessKey(day,si),athleteName:profile.name}))
             );
-          })
+          }),
+          // Unplanned workouts that day (rest days too)
+          extrasOf(r).map(x=>h(ExtraWorkoutRow,{key:"x"+x.id,day,x,comments,athleteName:profile.name}))
         );
       }),
-      !DAYS.some(d=>!dayIsRest(plan[d]))&&h("div",{style:{textAlign:"center",padding:"3rem",color:"var(--text-muted)",fontSize:14}},"No workouts planned for this week yet.")
+      !DAYS.some(d=>!dayIsRest(plan[d])||extrasOf(reports[d]).length)&&h("div",{style:{textAlign:"center",padding:"3rem",color:"var(--text-muted)",fontSize:14}},"No workouts planned for this week yet.")
     )
   );
 };
