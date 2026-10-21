@@ -1999,6 +1999,41 @@ const threadHasNew = (doc, key, role, seen) => {
 
 // Live comments for one athlete-week. seenBefore is when this viewer last looked; it stays fixed while
 // the week is open so "NEW" marks don't vanish mid-read. Opening the week records now as seen.
+// Pages load their week once; phones keep a page open in the background for days without reloading it,
+// so a page opened last week would still show last week's plan (and Today would pick last week's workout).
+// This counter bumps when the app comes back into view after ≥15 s away (tab switched back, phone
+// unlocked, window refocused, page restored from the browser's memory) and when the date changes while
+// it is open; pages reload their data when it changes.
+const useRefreshTick = () => {
+  const [tick, setTick] = useState(0);
+  useEffect(()=>{
+    let awayAt = document.hidden ? Date.now() : null;
+    let day = new Date().toDateString();
+    const bump = () => { awayAt = null; day = new Date().toDateString(); setTick(t=>t+1); };
+    const away = () => { if (awayAt==null) awayAt = Date.now(); };
+    const back = () => {
+      if (document.hidden) return;
+      if ((awayAt!=null && Date.now()-awayAt>=15000) || new Date().toDateString()!==day) bump();
+      else awayAt = null;
+    };
+    const onVis = () => document.hidden ? away() : back();
+    const onShow = e => { if (e.persisted) bump(); };
+    const timer = setInterval(()=>{ if (!document.hidden && new Date().toDateString()!==day) bump(); }, 60000);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("blur", away);
+    window.addEventListener("focus", back);
+    window.addEventListener("pageshow", onShow);
+    return ()=>{
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("blur", away);
+      window.removeEventListener("focus", back);
+      window.removeEventListener("pageshow", onShow);
+    };
+  }, []);
+  return tick;
+};
+
 const useComments = (athleteId, wk, role) => {
   const [doc, setDoc] = useState(null);
   const [seenBefore, setSeenBefore] = useState(0);
@@ -3113,6 +3148,8 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
   const [weightPrev,setWeightPrev]=useState(null);
   const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
   const today=todayShort();
+  const refreshTick=useRefreshTick();
+  const loadedKey=useRef(""); // athlete+week whose plan is on screen, so a refresh of it needs no spinner
   const comments=useComments(athlete.id, weekKey(weekOff), "coach");
   const onDriveClick=useDriveSync(athlete,plan,reports,weekOff,loading,comments.doc.threads);
 
@@ -3121,11 +3158,12 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       dbGet(`weight/${athlete.id}/entries/${monthKey()}`),
       dbGet(`weight/${athlete.id}/entries/${prevMonthKey()}`)
     ]).then(([c,p])=>{setWeightCur(c);setWeightPrev(p);});
-  },[athlete.id]);
+  },[athlete.id,refreshTick]);
 
   useEffect(()=>{
-    setLoading(true);
     const wk=weekKey(weekOff);
+    // Coming back to the same week (refreshTick) reloads quietly; a different athlete/week shows the spinner
+    if(loadedKey.current!==athlete.id+wk) setLoading(true);
     const loadAll=async()=>{
       const [p,r]=await Promise.all([
         dbGetPlan(athlete.id, weekOff),
@@ -3141,10 +3179,11 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       const finalPlan=p?migratePlan(p):gp;
       setPlan(finalPlan);
       setReports(r||{});
+      loadedKey.current=athlete.id+wk;
       setLoading(false);
     };
     loadAll();
-  },[athlete.id,weekOff,athlete.groupId]);
+  },[athlete.id,weekOff,athlete.groupId,refreshTick]);
 
   const savePlan=async(newPlan)=>{
     const wk=weekKey(weekOff);
@@ -3320,6 +3359,8 @@ const AthleteHome = ({user,onSignOut}) => {
   const [weightPrev,setWeightPrev]=useState(null);
   const showToast=useCallback((msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2500);},[]);
   const today=todayShort();
+  const refreshTick=useRefreshTick();
+  const loadedKey=useRef(""); // week whose plan is on screen, so a refresh of it needs no spinner
   const comments=useComments(user.uid, weekKey(weekOff), "athlete");
 
   useEffect(()=>{
@@ -3331,7 +3372,7 @@ const AthleteHome = ({user,onSignOut}) => {
       dbGet(`weight/${user.uid}/entries/${monthKey()}`),
       dbGet(`weight/${user.uid}/entries/${prevMonthKey()}`)
     ]).then(([c,p])=>{setWeightCur(c);setWeightPrev(p);});
-  },[user.uid]);
+  },[user.uid,refreshTick]);
 
   const saveWeight=async(kg)=>{
     if(!kg)return;
@@ -3344,8 +3385,9 @@ const AthleteHome = ({user,onSignOut}) => {
 
   useEffect(()=>{
     if(!profile)return;
-    setLoading(true);
     const wk=weekKey(weekOff);
+    // Coming back to the same week (refreshTick) reloads quietly; another week shows the spinner
+    if(loadedKey.current!==wk) setLoading(true);
     const load=async()=>{
       const [p,r]=await Promise.all([
         dbGetPlan(user.uid, weekOff),
@@ -3358,10 +3400,11 @@ const AthleteHome = ({user,onSignOut}) => {
       }
       setPlan(finalPlan);
       setReports(r||{});
+      loadedKey.current=wk;
       setLoading(false);
     };
     load();
-  },[user.uid,weekOff,profile]);
+  },[user.uid,weekOff,profile,refreshTick]);
 
   const saveReport=async(day,rep)=>{
     const wk=weekKey(weekOff);
@@ -3407,7 +3450,7 @@ const AthleteHome = ({user,onSignOut}) => {
         h("button",{className:"btn btns",onClick:onSignOut},"Sign out")
       )
     ),
-    h(RaceCountdown,{athleteId:user.uid,groupId:profile.groupId}),
+    h(RaceCountdown,{athleteId:user.uid,groupId:profile.groupId,refresh:plan}),
     weekOff===0&&!loading&&h(TodayCard,{plan,reports,athleteName:profile.name,onReport:saveReport,comments}),
     h("div",{style:{display:"flex",gap:10,marginBottom:"1.5rem"}},
       h(WeeklyKmCard,{done:actualKm,planned:DAYS.reduce((s,d)=>s+dayTotalKm(plan[d]),0)}),
@@ -3787,7 +3830,8 @@ const CoachDashboard = ({user,onSignOut}) => {
     });
   };
 
-  useEffect(()=>{loadData();},[]);
+  const refreshTick=useRefreshTick();
+  useEffect(()=>{loadData();},[refreshTick]);
 
   const addAthlete=async(f)=>{
     try{

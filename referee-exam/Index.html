@@ -14,6 +14,7 @@
   --track:#B5422B; --track-ink:#FFFFFF; --field:#2D6848;
   --ok:#2A7A4C; --ok-bg:#E3F2E8; --bad:#B3261E; --bad-bg:#FBE6E4; --part:#9A6200; --part-bg:#FBF0DA;
   --focus:#1F5FBF;
+  --warn:#B85400; --warn-bg:#FDEBD8; --danger:#C21D12; --danger-bg:#FCE3E1;
   --f-display:"Frank Ruhl Libre","David","Times New Roman",serif;
   --f-body:"Assistant","Segoe UI","Arial Hebrew",Arial,sans-serif;
   --f-mono:"IBM Plex Mono",Consolas,monospace;
@@ -23,12 +24,14 @@
   --track:#D9694B; --track-ink:#1A0F0B; --field:#72BF92;
   --ok:#6CC892; --ok-bg:#183323; --bad:#F27B70; --bad-bg:#3A1A17; --part:#E8B357; --part-bg:#3A2C10;
   --focus:#7FB0FF; color-scheme:dark;
+  --warn:#F39A45; --warn-bg:#3B250F; --danger:#FF7468; --danger-bg:#42150F;
 }}
 :root[data-theme="dark"]{
   --bg:#111613; --surface:#19201C; --ink:#E7ECE8; --muted:#9AA6A0; --line:#2C3731;
   --track:#D9694B; --track-ink:#1A0F0B; --field:#72BF92;
   --ok:#6CC892; --ok-bg:#183323; --bad:#F27B70; --bad-bg:#3A1A17; --part:#E8B357; --part-bg:#3A2C10;
   --focus:#7FB0FF; color-scheme:dark;
+  --warn:#F39A45; --warn-bg:#3B250F; --danger:#FF7468; --danger-bg:#42150F;
 }
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:17px;line-height:1.6;direction:rtl}
@@ -90,6 +93,16 @@ input[type=text]{width:100%;font:inherit;padding:10px 12px;border:1px solid var(
 .lane a.done{background:var(--track)}
 .bar-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .count{font-variant-numeric:tabular-nums;font-weight:600}
+.bar-info{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:17px;padding:3px 12px;border-radius:99px;background:var(--bg);color:var(--ink);border:1px solid var(--line);transition:background-color .3s,color .3s}
+.mode-badge{justify-self:start;font-size:14px;font-weight:700;padding:3px 12px;border-radius:99px;background:var(--field);color:var(--surface)}
+.limits{border:0;margin:0;padding:0;min-width:0}
+.limit-opts{display:flex;flex-wrap:wrap;gap:8px}
+.limit{display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--line);border-radius:99px;background:var(--bg);cursor:pointer;font-weight:600}
+.limit input{accent-color:var(--track);margin:0}
+.limit:has(input:checked){border-color:var(--track);box-shadow:inset 0 0 0 1px var(--track)}
+.timer.warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn)}
+.timer.danger{background:var(--danger-bg);color:var(--danger);border-color:var(--danger)}
 .confirm{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--part-bg);color:var(--ink);border-radius:8px;padding:8px 12px}
 
 /* results */
@@ -150,7 +163,8 @@ input[type=text]{width:100%;font:inherit;padding:10px 12px;border:1px solid var(
 <div class="wrap" id="app" dir="rtl" lang="he">
   <header>
     <div class="eyebrow">APPRENTICE LEVEL REFEREE · ATHLETICS</div>
-    <h1>מבחן שופט מתלמד באתלטיקה קלה</h1>
+    <h1 id="page-title">מבחן שופט מתלמד באתלטיקה קלה</h1>
+    <span class="mode-badge" id="mode-badge" hidden>מצב תרגול · התוצאה לא נחשבת למבחן</span>
     <p>חוקי התחרות והחוקים הטכניים של World Athletics: ריצות, משוכות, שליחים, קפיצות ומקצועות הזריקה.</p>
   </header>
   <main id="view"></main>
@@ -163,6 +177,14 @@ document.documentElement.setAttribute('dir','rtl');
 document.documentElement.setAttribute('lang','he');
 
 const PASS_MARK = 80;          // ציון עובר
+const TIME_LIMIT_MIN = 20;     // זמן המבחן בדקות (חייב להתאים ל-Code.gs)
+const PRACTICE_LIMITS = [20, 25, 30];  // זמנים לבחירה בתרגול, ועוד "ללא הגבלה" (חייב להתאים ל-Code.gs)
+const ORANGE_LEFT_MIN = 6;     // השעון הופך לכתום כשנשארות 6 דקות (במבחן: אחרי 14 דקות)
+const RED_LEFT_MIN = 3;        // ולאדום כשנשארות 3 דקות (במבחן: אחרי 17 דקות)
+
+/* מצב תרגול: אותו מבחן בדיוק, מהקישור עם ?mode=practice. נקבע בטעינה. */
+let PRACTICE = false;
+const T = (exam, practice) => PRACTICE ? practice : exam;
 const LETTERS = ['א','ב','ג','ד','ה'];
 
 /* type: 's' = תשובה נכונה אחת, 'm' = כמה תשובות נכונות. c:1 מסמן תשובה נכונה. */
@@ -389,7 +411,9 @@ const TOPICS = {
 
 const view = document.getElementById('view');
 const bar = document.getElementById('bar');
-const state = { name:'', attempt:0, order:[], answers:{}, results:null, startedAt:0, save:'idle' };
+const state = { name:'', attempt:0, order:[], answers:{}, results:null, startedAt:0, deadline:0,
+  limitChoice:PRACTICE_LIMITS[0], limitMin:TIME_LIMIT_MIN,
+  token:null, timer:null, auto:false, elapsedSec:0, save:'idle' };
 
 /* קריאה לשרת Apps Script. מחוץ ל-Apps Script (תצוגה מקומית) מחזיר null. */
 function server(fn, ...args){
@@ -411,44 +435,91 @@ function renderIntro(){
       <li><b>${QUESTIONS.length}</b><span>שאלות, 4 נקודות לכל שאלה</span></li>
       <li><b>${PASS_MARK}</b><span>ציון עובר, מתוך 100</span></li>
       <li><b>${multi}</b><span>שאלות עם כמה תשובות נכונות</span></li>
+      ${PRACTICE ? `<li><b>לבחירה</b><span>זמן התרגול</span></li>` : `<li><b>${TIME_LIMIT_MIN}</b><span>דקות למבחן</span></li>`}
     </ul>
     <div class="stack" style="gap:6px">
+      ${PRACTICE
+        ? `<p class="note">זהו תרגול. השאלות, התשובות והניקוד זהים למבחן. בחרו זמן לתרגול, או תרגלו ללא הגבלת זמן. בזמן מוגבל, כשהזמן נגמר התרגול מוגש אוטומטית עם התשובות שסומנו עד אז.</p>`
+        : `<p class="note">השעון מתחיל לרוץ ברגע הלחיצה על "התחלת המבחן", והזמן שנותר מוצג בתחתית המסך. כשהזמן נגמר, המבחן מוגש אוטומטית עם התשובות שסומנו עד אז. אל תרעננו ואל תסגרו את הדף באמצע המבחן, אחרת הניסיון לא יישמר.</p>`}
       <p class="note">בשאלות עם תשובה אחת מסמנים אפשרות אחת. בשאלות שמסומנות "כמה תשובות נכונות" יש 2 או 3 תשובות נכונות. סימון חלקי מקבל ניקוד חלקי, וכל סימון שגוי מוריד מהניקוד של אותה שאלה.</p>
-      <p class="note">בסיום יוצגו הציון והתשובות הנכונות. מי שלא עובר יכול לגשת מיד לניסיון חוזר: אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.</p>
+      <p class="note">${T('בסיום יוצגו הציון והתשובות הנכונות. מי שלא עובר יכול לגשת מיד לניסיון חוזר: אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.',
+        'בסיום יוצגו הציון והתשובות הנכונות. אפשר לתרגל שוב כמה פעמים שרוצים: אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.')}</p>
     </div>
-    <form id="start-form" class="stack" style="gap:10px" novalidate>
+    <form id="start-form" class="stack" style="gap:14px" novalidate>
       <div>
-        <label class="field-label" for="student-name">שם מלא של הנבחן/ת</label>
+        <label class="field-label" for="student-name">${T('שם מלא של הנבחן/ת','שם מלא של המתרגל/ת')}</label>
         <input type="text" id="student-name" autocomplete="name" value="${esc(state.name)}" placeholder="לדוגמה: נועה כהן">
         <p class="err" id="name-err" hidden>יש להזין שם מלא כדי להתחיל.</p>
       </div>
-      <div class="row"><button class="btn" type="submit">התחלת המבחן</button></div>
+      ${PRACTICE ? `<fieldset class="limits">
+        <legend class="field-label">זמן התרגול</legend>
+        <div class="limit-opts">
+          ${PRACTICE_LIMITS.map(m=>`<label class="limit" for="limit-${m}"><input type="radio" name="limit" id="limit-${m}" value="${m}" ${state.limitChoice===m?'checked':''}><span>${m} דקות</span></label>`).join('')}
+          <label class="limit" for="limit-none"><input type="radio" name="limit" id="limit-none" value="" ${state.limitChoice===null?'checked':''}><span>ללא הגבלה</span></label>
+        </div>
+      </fieldset>` : ''}
+      <div class="row"><button class="btn" type="submit">${T('התחלת המבחן','התחלת התרגול')}</button></div>
     </form>
   </section>`;
   document.getElementById('start-form').addEventListener('submit', async e=>{
     e.preventDefault();
     const n = document.getElementById('student-name').value.replace(/\s+/g,' ').trim();
     if(n.length<2){ document.getElementById('name-err').hidden=false; return; }
-    const btn = e.target.querySelector('button');
-    btn.disabled = true; btn.textContent = 'טוען…';
     state.name = n;
-    try { const next = await server('getNextAttempt', n); state.attempt = (next||1) - 1; }
-    catch(err){ state.attempt = 0; }
-    startAttempt();
+    if(PRACTICE){
+      const v = (document.querySelector('input[name="limit"]:checked')||{}).value;
+      state.limitChoice = v ? Number(v) : null;
+    }
+    beginAttempt(e.target.querySelector('button'));
   });
 }
 
 /* ---------- exam ---------- */
-function startAttempt(){
-  state.attempt++;
+async function beginAttempt(btn){
+  if(btn){ btn.disabled = true; btn.textContent = 'טוען…'; }
+  const limit = PRACTICE ? state.limitChoice : TIME_LIMIT_MIN;   // null = ללא הגבלה
+  let res = null;
+  try { res = await server('startAttempt', state.name, PRACTICE ? {mode:'practice', limitMin:limit} : {mode:'exam'}); }
+  catch(err){ res = null; }
+  state.token = res ? res.token : null;
+  state.attempt = res ? res.attempt : state.attempt + 1;
+  state.limitMin = limit;
   state.answers = {};
   state.results = null;
   state.save = 'idle';
+  state.auto = false;
   state.startedAt = Date.now();
+  state.deadline = limit ? state.startedAt + limit*60000 : 0;
   state.order = shuffle(QUESTIONS).map(q=>({ q, opts: shuffle(q.o.map((o,i)=>({...o, id:q.id+'-'+i}))) }));
   renderExam();
   window.scrollTo({top:0});
+  clearInterval(state.timer);
+  state.timer = setInterval(tick, 1000);
+  window.addEventListener('beforeunload', warnLeave);
 }
+
+function warnLeave(e){ e.preventDefault(); e.returnValue = ''; }
+
+/* שעון לפי השעה בפועל, כך שהוא נכון גם אחרי שהטלפון ננעל או שהלשונית הייתה ברקע */
+function tick(){
+  if(state.deadline && state.deadline - Date.now() <= 0){ submit(true); return; }
+  renderTimer();
+}
+
+function renderTimer(){
+  const el = document.getElementById('timer');
+  if(!el) return;
+  if(!state.deadline){   // תרגול ללא הגבלה: שעון שסופר קדימה, בלי צבעים
+    el.textContent = 'זמן שעבר ' + mmss(Math.floor((Date.now() - state.startedAt)/1000));
+    el.className = 'timer';
+    return;
+  }
+  const left = Math.max(0, state.deadline - Date.now());
+  el.textContent = 'נותרו ' + mmss(Math.ceil(left/1000));
+  el.className = 'timer' + (left <= RED_LEFT_MIN*60000 ? ' danger' : left <= ORANGE_LEFT_MIN*60000 ? ' warn' : '');
+}
+
+function mmss(sec){ return Math.floor(sec/60) + ':' + String(sec%60).padStart(2,'0'); }
 
 function renderExam(){
   const cards = state.order.map((it,idx)=>{
@@ -469,7 +540,7 @@ function renderExam(){
   }).join('');
   view.innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
-      <p class="note">נבחן/ת: <b style="color:var(--ink)">${esc(state.name)}</b> · ניסיון מס' ${state.attempt}</p>
+      <p class="note">${T('נבחן/ת','מתרגל/ת')}: <b style="color:var(--ink)">${esc(state.name)}</b> · ${T("ניסיון מס'","תרגול מס'")} ${state.attempt}${PRACTICE ? ' · ' + (state.limitMin ? state.limitMin + ' דקות' : 'ללא הגבלת זמן') : ''}</p>
     </div>
     <div class="stack">${cards}</div>`;
   view.querySelectorAll('input').forEach(inp=>inp.addEventListener('change', ()=>{
@@ -491,21 +562,22 @@ function updateBar(confirming){
     ${confirming ? `<div class="confirm"><span>נותרו ${total-n} שאלות ללא מענה. שאלה שלא נענתה מקבלת 0 נקודות.</span>
         <button class="btn" type="button" id="force-submit">הגשה בכל זאת</button>
         <button class="btn ghost" type="button" id="back">חזרה למבחן</button></div>`
-    : `<div class="bar-row"><span class="count">נענו ${n} מתוך ${total}</span>
-        <button class="btn" type="button" id="submit">הגשת המבחן</button></div>`}
+    : `<div class="bar-row"><span class="bar-info"><span class="timer" id="timer" role="timer" aria-live="off"></span><span class="count">נענו ${n} מתוך ${total}</span></span>
+        <button class="btn" type="button" id="submit">${T('הגשת המבחן','הגשת התרגול')}</button></div>`}
   </div>`;
+  renderTimer();
   bar.querySelectorAll('.lane a').forEach(a=>a.addEventListener('click',e=>{
     e.preventDefault(); document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth',block:'center'});
   }));
   if(confirming){
-    document.getElementById('force-submit').onclick = submit;
+    document.getElementById('force-submit').onclick = ()=>submit(false);
     document.getElementById('back').onclick = ()=>{
       updateBar();
       const first = state.order.findIndex(it=>!(state.answers[it.q.id]||[]).length);
       if(first>=0) document.getElementById('q-'+(first+1)).scrollIntoView({behavior:'smooth',block:'center'});
     };
   } else {
-    document.getElementById('submit').onclick = ()=> answeredCount()<total ? updateBar(true) : submit();
+    document.getElementById('submit').onclick = ()=> answeredCount()<total ? updateBar(true) : submit(false);
   }
 }
 
@@ -524,7 +596,13 @@ function gradeOne(it){
   return { frac, chosen, answered: chosen.size>0 };
 }
 
-function submit(){
+function submit(auto){
+  if(state.results) return;
+  clearInterval(state.timer);
+  window.removeEventListener('beforeunload', warnLeave);
+  state.auto = !!auto;
+  const took = Math.round((Date.now()-state.startedAt)/1000);
+  state.elapsedSec = state.limitMin ? Math.min(state.limitMin*60, took) : took;
   const per = state.order.map(it=>({it, ...gradeOne(it)}));
   const raw = per.reduce((s,p)=>s+p.frac,0) * (100/state.order.length);
   const score = Math.round(raw);
@@ -538,11 +616,11 @@ function submit(){
 async function saveResult(){
   const {per,score} = state.results;
   const payload = {
-    name: state.name, score,
+    name: state.name, mode: PRACTICE ? 'practice' : 'exam', limitMin: state.limitMin,
+    token: state.token, auto: state.auto, elapsedSec: state.elapsedSec, score,
     full: per.filter(p=>p.frac===1).length,
     part: per.filter(p=>p.frac>0&&p.frac<1).length,
     zero: per.filter(p=>p.frac===0).length,
-    minutes: Math.max(1, Math.round((Date.now()-state.startedAt)/60000)),
     weak: per.filter(p=>p.frac<1).map(p=>TOPICS[p.it.q.id]||p.it.q.id)
   };
   state.save = 'saving'; renderSave();
@@ -582,7 +660,16 @@ function renderResults(){
   const ptsPer = 100/per.length;
   const dateStr = date.toLocaleDateString('he-IL',{day:'numeric',month:'long',year:'numeric'});
 
-  const cert = passed ? `
+  const again = !passed || PRACTICE;   // בתרגול אפשר לתרגל שוב גם אחרי שעברו את הרף
+  const againBtns = id => `<div class="row"><button class="btn" type="button" id="${id}">${T('ניסיון חוזר','תרגול נוסף')}</button>${
+    PRACTICE ? `<button class="btn ghost" type="button" id="${id}-time">שינוי זמן התרגול</button>` : ''}</div>`;
+  const timeNote = state.auto
+    ? `הזמן נגמר, ו${T('המבחן','התרגול')} הוגש אוטומטית אחרי ${state.limitMin} דקות.`
+    : state.limitMin
+      ? `משך ${T('המבחן','התרגול')}: ${mmss(state.elapsedSec)} דקות, מתוך ${state.limitMin}.`
+      : `משך התרגול: ${mmss(state.elapsedSec)} דקות (ללא הגבלת זמן).`;
+
+  const cert = passed && !PRACTICE ? `
     <section class="cert" aria-label="אישור מעבר המבחן">
       <div class="eyebrow">APPRENTICE LEVEL REFEREE</div>
       <h2>אישור מעבר מבחן שופט מתלמד באתלטיקה קלה</h2>
@@ -625,31 +712,54 @@ function renderResults(){
     <section class="panel score">
       <div class="score-num">${score}<small> / 100</small></div>
       <div class="stack" style="gap:6px">
-        <div class="row"><span class="verdict ${passed?'pass':'fail'}">${passed?'עבר/ה':'לא עבר/ה'}</span>
-          <span class="note">${esc(state.name)} · ניסיון מס' ${state.attempt} · ציון עובר: ${PASS_MARK}</span></div>
+        <div class="row"><span class="verdict ${passed?'pass':'fail'}">${PRACTICE ? (passed?'מעל ציון המעבר':'מתחת לציון המעבר') : (passed?'עבר/ה':'לא עבר/ה')}</span>
+          <span class="note">${esc(state.name)} · ${T("ניסיון מס'","תרגול מס'")} ${state.attempt} · ציון עובר: ${PASS_MARK}</span></div>
+        <p class="note">${timeNote}</p>
         <ul class="tally">
           <li><b>${full}</b> נכונות</li><li><b>${part}</b> חלקיות</li><li><b>${zero}</b> שגויות או ללא מענה</li>
         </ul>
         <div class="save" id="save-status" role="status" hidden></div>
-        ${passed ? '' : `<p class="note">כדאי לעבור על ההסברים למטה. בניסיון החוזר יופיעו אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.</p>
-          <div class="row"><button class="btn" type="button" id="retry">ניסיון חוזר</button></div>`}
+        ${again ? `<p class="note">כדאי לעבור על ההסברים למטה. ${T('בניסיון החוזר','בתרגול הבא')} יופיעו אותן שאלות, בסדר אחר ועם תשובות בסדר אחר.</p>
+          ${againBtns('retry')}` : ''}
       </div>
     </section>
     ${cert}
     <div class="review-head"><h2 style="font-size:24px">פירוט התשובות</h2>
       <span class="note">✓ ירוק מלא: סומנה ונכונה · ✓ במסגרת מקווקוות: נכונה שלא סומנה · ✗ אדום: סומנה ושגויה</span></div>
     <div class="stack">${review}</div>
-    ${passed ? '' : `<div class="row"><button class="btn" type="button" id="retry2">ניסיון חוזר</button></div>`}
+    ${again ? againBtns('retry2') : ''}
   </div>`;
-  if(!passed){
-    document.getElementById('retry').onclick = startAttempt;
-    document.getElementById('retry2').onclick = startAttempt;
+  if(again){
+    ['retry','retry2'].forEach(id=>{
+      document.getElementById(id).onclick = e=>beginAttempt(e.currentTarget);
+      const t = document.getElementById(id+'-time');
+      if(t) t.onclick = ()=>{ renderIntro(); window.scrollTo({top:0}); };
+    });
   }
   renderSave();
 }
 function fmt(n){ return (Math.round(n*10)/10).toString(); }
 
-renderIntro();
+/* מצב תרגול נקבע לפי הקישור: ?mode=practice */
+function detectPractice(){
+  return new Promise(resolve=>{
+    try {
+      if(window.google && google.script && google.script.url){
+        google.script.url.getLocation(loc=>resolve(((loc && loc.parameter) || {}).mode === 'practice'));
+        return;
+      }
+    } catch(err){}
+    resolve(new URLSearchParams(location.search).get('mode') === 'practice');
+  });
+}
+
+function applyMode(){
+  document.getElementById('mode-badge').hidden = !PRACTICE;
+  document.getElementById('page-title').textContent = T('מבחן שופט מתלמד באתלטיקה קלה','תרגול: מבחן שופט מתלמד באתלטיקה קלה');
+  document.title = T('מבחן שופט מתלמד','תרגול – מבחן שופט מתלמד');
+}
+
+detectPractice().then(p=>{ PRACTICE = p; applyMode(); renderIntro(); });
 </script>
 </body>
 </html>
