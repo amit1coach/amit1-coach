@@ -2208,7 +2208,7 @@ const TodayCard = ({plan, reports, athleteName, onReport, comments}) => {
   );
 };
 
-const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin,athleteName,comments}) => {
+const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSavePlan,groups,groupPlan,onSaveWeekCheckin,athleteName,comments,onCopyDay}) => {
   const [editPlan,setEditPlan]=useState(false);
   const [repDay,setRepDay]=useState(null);
   const [extraEdit,setExtraEdit]=useState(null); // {day, x} — x is null when adding a new unplanned workout
@@ -2285,7 +2285,8 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
           !isRest&&r?.sessions&&h("span",{className:"stb",style:{background:"var(--success-bg)",color:"var(--success-text)"}},"Reported"),
           !isCoach&&!isRest&&h("button",{className:"btn btns",onClick:()=>setRepDay(day)},r?.sessions?"Edit":"Report"),
           !isCoach&&isRest&&h("button",{className:"btn btns",style:{fontSize:11},onClick:()=>setRepDay(day)},r?.sleep?"Edit":"😴 Log sleep & stress"),
-          !isCoach&&dayHasStarted(weekOff,day)&&h("button",{className:"btn btns",title:"Log a workout you did that wasn't in the plan",onClick:()=>setExtraEdit({day,x:null}),style:{fontSize:11,color:"var(--info-text)"}},"+ Unplanned")
+          !isCoach&&dayHasStarted(weekOff,day)&&h("button",{className:"btn btns",title:"Log a workout you did that wasn't in the plan",onClick:()=>setExtraEdit({day,x:null}),style:{fontSize:11,color:"var(--info-text)"}},"+ Unplanned"),
+          onCopyDay&&!isRest&&h("button",{className:"btn btns",title:"Copy this day's workout to another athlete or another day",onClick:()=>onCopyDay(day),style:{fontSize:11}},"⧉ Copy")
         )
       ),
       // Comments under each reported session, full width of the day card so they stay readable on a phone
@@ -2314,6 +2315,102 @@ const PlanView = ({plan,reports,weekOff,today,isCoach,onReport,onEditPlan,onSave
       h(ExtraWorkoutForm,{day:extraEdit.day,initial:extraEdit.x,onCancel:()=>setExtraEdit(null),
         onSave:x=>{onReport(extraEdit.day,withExtra(reports[extraEdit.day],x));setExtraEdit(null);},
         onDelete:extraEdit.x?()=>{onReport(extraEdit.day,withoutExtra(reports[extraEdit.day],extraEdit.x.id));setExtraEdit(null);}:null})
+    )
+  );
+};
+
+// ── Copy plans between athletes / days / weeks ──────────────────────────────
+// The coach copies a session, a whole day or a whole week from the athlete on screen to any athlete
+// (including the same one) and any date. The target week starts from that athlete's own plan, else their
+// group's plan — so copying one day into a group member's week keeps the group's other days.
+const dateStrOf = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const weekOffOfDate = dateStr => {
+  const d = new Date(dateStr+"T00:00:00"); d.setDate(d.getDate()-d.getDay());
+  return Math.round((d - getWeekStart(0)) / (7*86400000));
+};
+const dayOfDate = dateStr => DAYS[new Date(dateStr+"T00:00:00").getDay()];
+const fmtDateLong = dateStr => new Date(dateStr+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+const loadPlanToEdit = async (athleteId, groupId, off) => {
+  const own = await dbGetPlan(athleteId, off);
+  if (own) return migratePlan(own);
+  const gp = groupId ? await dbGet(`groupPlans/${groupId}/weeks/${weekKey(off)}`) : null;
+  return migratePlan(gp || {});
+};
+const daySummary = d => dayIsRest(d) ? "Rest / Off"
+  : (d.sessions||[]).map(s=>(s.parts||[]).map(p=>(WT[p.type]||WT.easy).label+(partPlanText(p)?" "+partPlanText(p):"")).join(" + ")).join("  /  ");
+const clone = o => JSON.parse(JSON.stringify(o));
+
+// kind: "day" (the day's sessions, or one of them) or "week"
+const CopyPlanModal = ({kind, athlete, athletes, plan, weekOff, day, onClose, onDone}) => {
+  const srcDate = (()=>{ const d=getWeekStart(weekOff); d.setDate(d.getDate()+(kind==="day"?DAYS_IDX[day]:0)); return dateStrOf(d); })();
+  const sessions = kind==="day" ? (plan[day]?.sessions||[]) : [];
+  const [targetId, setTargetId] = useState("");
+  const [date, setDate] = useState(srcDate);
+  const [what, setWhat] = useState("all");      // "all" or a session index (day copy with several sessions)
+  const [how, setHow] = useState("replace");    // day copy: "replace" the target day or "add" to its sessions
+  const [target, setTarget] = useState(null);   // {plan} of the target week, or {error}
+  const [busy, setBusy] = useState(false);
+  const tAth = athletes.find(a=>a.id===targetId);
+  const off = date ? weekOffOfDate(date) : null, tDay = date ? dayOfDate(date) : null;
+  useEffect(()=>{
+    setTarget(null);
+    if (!tAth || off==null) return;
+    let live = true;
+    loadPlanToEdit(tAth.id, tAth.groupId, off).then(p=>{ if(live) setTarget({plan:p}); }).catch(e=>{ if(live) setTarget({error:e.message}); });
+    return ()=>{ live=false; };
+  }, [targetId, off]);
+  const sameSpot = tAth?.id===athlete.id && off===weekOff && (kind==="week" || tDay===day);
+  const toCopy = what==="all" ? sessions : [sessions[what]];
+  const buildPlan = () => {
+    if (kind==="week") return clone(plan);
+    const p = clone(target.plan), cur = p[tDay];
+    p[tDay] = how==="add" && !dayIsRest(cur)
+      ? {restDay:false, sessions:[...cur.sessions, ...clone(toCopy)]}
+      : {restDay:false, sessions:clone(toCopy)};
+    return p;
+  };
+  const doCopy = async () => {
+    setBusy(true);
+    try {
+      await _db.collection(`plans/${tAth.id}/weeks`).doc(weekKey(off)).set(buildPlan());
+      onDone(`Copied to ${tAth.name} — ${kind==="week" ? "week of "+weekLabel(off) : fmtDateLong(date)}`, tAth.id, off);
+    } catch(e) { alert("Couldn't copy: "+e.message); setBusy(false); }
+  };
+  const label = t => h("label",{className:"lbl"},t);
+  const targetDay = target?.plan?.[tDay];
+  const targetHasWeek = target?.plan && DAYS.some(d=>!dayIsRest(target.plan[d]));
+  return h(Modal,{title:kind==="week" ? "Copy week — "+weekLabel(weekOff) : "Copy "+fmtDateLong(srcDate),onClose,wide:true},
+    kind==="day"&&h("div",{style:{fontSize:13,color:"var(--text-muted2)",marginBottom:12,padding:"8px 10px",background:"var(--surface-alt)",borderRadius:6}},
+      h("strong",null,athlete.name+": "),daySummary(plan[day])),
+    kind==="day"&&sessions.length>1&&h("div",{style:{marginBottom:12}},label("What to copy"),
+      h("select",{value:what,onChange:e=>setWhat(e.target.value==="all"?"all":+e.target.value)},
+        h("option",{value:"all"},"The whole day ("+sessions.length+" sessions)"),
+        sessions.map((s,i)=>h("option",{key:i,value:i},"Session "+(i+1)+" only")))),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12},className:"gr2"},
+      h("div",null,label("To athlete"),
+        h("select",{value:targetId,onChange:e=>setTargetId(e.target.value)},
+          h("option",{value:""},"Choose…"),
+          [...athletes].sort((a,b)=>a.name.localeCompare(b.name)).map(a=>h("option",{key:a.id,value:a.id},a.name+(a.id===athlete.id?" (same athlete)":""))))),
+      h("div",null,label(kind==="week"?"Any day in the target week":"On date"),
+        h("input",{type:"date",value:date,onChange:e=>setDate(e.target.value),style:{fontFamily:"inherit"}}),
+        kind==="week"&&date&&h("div",{style:{fontSize:11,color:"var(--text-muted)",marginTop:3}},"Week "+weekLabel(off)))
+    ),
+    tAth&&!target&&h("div",{style:{fontSize:12,color:"var(--text-muted)",marginBottom:10}},"Checking "+tAth.name+"'s plan…"),
+    target?.error&&h("div",{style:{fontSize:12,color:"var(--danger-text)",marginBottom:10}},"Couldn't load "+tAth.name+"'s plan: "+target.error),
+    target?.plan&&kind==="day"&&h("div",{style:{marginBottom:12}},
+      h("div",{style:{fontSize:13,marginBottom:8}},h("strong",null,tAth.name+" on "+fmtDateLong(date)+": "),
+        h("span",{style:{color:"var(--text-muted2)"}},daySummary(targetDay))),
+      !dayIsRest(targetDay)&&h("div",{style:{display:"flex",gap:16,fontSize:13}},
+        [["replace","Replace it"],["add","Add as another session"]].map(([k,t])=>h("label",{key:k,style:{display:"flex",alignItems:"center",gap:5,cursor:"pointer"}},
+          h("input",{type:"radio",checked:how===k,onChange:()=>setHow(k)}),t)))
+    ),
+    target?.plan&&kind==="week"&&h("div",{style:{fontSize:13,marginBottom:12,color:targetHasWeek?"var(--warning-text)":"var(--text-muted2)"}},
+      targetHasWeek ? "⚠ "+tAth.name+" already has a plan for "+weekLabel(off)+" — it will be replaced by this week's plan."
+        : tAth.name+" has no plan for "+weekLabel(off)+" yet."),
+    sameSpot&&h("div",{style:{fontSize:12,color:"var(--danger-text)",marginBottom:10}},"That's the same "+(kind==="week"?"week":"day")+" — choose another athlete or date."),
+    h("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}},
+      h("button",{className:"btn",onClick:onClose},"Cancel"),
+      h("button",{className:"btnp",disabled:!target?.plan||sameSpot||busy,onClick:doCopy,style:{opacity:!target?.plan||sameSpot||busy?.5:1}},busy?"Copying…":"Copy")
     )
   );
 };
@@ -3134,7 +3231,7 @@ const DriveButton = ({onClick}) => {
     style:st.state==="error"?{color:"var(--danger-text)"}:undefined},label);
 };
 
-const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
+const AthleteDetail = ({athlete,athletes=[],groups,onBack,onUpdate,coachId}) => {
   const [tab,setTab]=useState("plan");
   const [weekOff,setWeekOff]=useState(0);
   const [editPlan,setEditPlan]=useState(false);
@@ -3150,6 +3247,8 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
   const today=todayShort();
   const refreshTick=useRefreshTick();
   const loadedKey=useRef(""); // athlete+week whose plan is on screen, so a refresh of it needs no spinner
+  const [planVersion,setPlanVersion]=useState(0); // bumped to reload after copying into this athlete's week
+  const [copyReq,setCopyReq]=useState(null);       // {kind:"day"|"week", day} while the Copy window is open
   const comments=useComments(athlete.id, weekKey(weekOff), "coach");
   const onDriveClick=useDriveSync(athlete,plan,reports,weekOff,loading,comments.doc.threads);
 
@@ -3183,7 +3282,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       setLoading(false);
     };
     loadAll();
-  },[athlete.id,weekOff,athlete.groupId,refreshTick]);
+  },[athlete.id,weekOff,athlete.groupId,refreshTick,planVersion]);
 
   const savePlan=async(newPlan)=>{
     const wk=weekKey(weekOff);
@@ -3260,6 +3359,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       ),
       h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",paddingBottom:4}},
         tab==="plan"&&h("button",{className:"btnp btns",onClick:()=>setEditPlan(true)},"Edit plan"),
+        tab==="plan"&&!loading&&DAYS.some(d=>!dayIsRest(plan[d]))&&h("button",{className:"btn btns",title:"Copy this whole week to another athlete or another week",onClick:()=>setCopyReq({kind:"week"})},"⧉ Copy week"),
         h("button",{className:"btn btns",onClick:()=>printWeeklySummary(athlete,plan,reports,weekOff,comments.doc)},"📄 Summary"),
         h(DriveButton,{onClick:onDriveClick}),
         tab!=="progress"&&h(Fragment,null,
@@ -3271,7 +3371,7 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
     ),
     tab==="progress"&&h(ProgressView,{athleteId:athlete.id,groupId:athlete.groupId}),
     loading?h(Spinner):null,
-    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:athlete.name,comments}),
+    !loading&&tab==="plan"&&h(PlanView,{plan,reports,weekOff,today,isCoach:true,onReport:saveReport,onSaveWeekCheckin:saveWeekCheckin,athleteName:athlete.name,comments,onCopyDay:day=>setCopyReq({kind:"day",day})}),
     !loading&&tab==="plan"&&h("div",{style:{marginTop:14}},h(MonthlyWeight,{current:weightCur,previous:weightPrev,isCoach:true})),
     !loading&&tab==="reports"&&h("div",null,
       // Planned training days, plus rest days with an unplanned workout
@@ -3336,6 +3436,9 @@ const AthleteDetail = ({athlete,groups,onBack,onUpdate,coachId}) => {
       }),
       !DAYS.some(d=>!dayIsRest(plan[d])||extrasOf(reports[d]).length)&&h("div",{style:{textAlign:"center",padding:"3rem",color:"var(--text-muted)",fontSize:14}},"No workouts planned this week.")
     ),
+    copyReq&&h(CopyPlanModal,{kind:copyReq.kind,day:copyReq.day,athlete,athletes:athletes.length?athletes:[athlete],plan,weekOff,
+      onClose:()=>setCopyReq(null),
+      onDone:(msg,tid,off)=>{ setCopyReq(null); showToast(msg); if(tid===athlete.id&&off===weekOff) setPlanVersion(v=>v+1); }}),
     editPlan&&h(Modal,{title:"Edit plan — "+weekLabel(weekOff),onClose:()=>setEditPlan(false),wide:true},
       h(PlanEditor,{plan,onCancel:()=>setEditPlan(false),onSave:savePlan})
     ),
@@ -3893,7 +3996,7 @@ const CoachDashboard = ({user,onSignOut}) => {
   const flaggedCount=athletes.filter(a=>attention[a.id]?.flags?.length).length;
   const allLoaded=athletes.every(a=>attention[a.id]);
 
-  if(selectedAthlete)return h(AthleteDetail,{athlete:selectedAthlete,groups,onBack:()=>setSelectedAthlete(null),onUpdate:updateAthlete,coachId:user.uid});
+  if(selectedAthlete)return h(AthleteDetail,{athlete:selectedAthlete,athletes,groups,onBack:()=>setSelectedAthlete(null),onUpdate:updateAthlete,coachId:user.uid});
   if(showCalendar)return h(SeasonCalendar,{onClose:()=>setShowCalendar(false),isCoach:true});
 
   return h("div",{style:{maxWidth:780,margin:"0 auto",padding:"1.5rem 1rem"}},
